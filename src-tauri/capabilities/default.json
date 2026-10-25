@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "CheckIt 窗口默认能力",
+  "windows": ["widget", "manager"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-focus",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-center",
+    "core:event:default",
+    "core:app:default"
+  ]
+}

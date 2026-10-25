@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/* Tailwind v4：基于类的深色模式切换（由 useTheme 控制 .dark） */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ===== CheckIt 设计令牌 ===== */
+:root {
+  /* 玻璃面板底色不透明度（由设置动态写入） */
+  --glass-opacity: 0.35;
+
+  /* 面板底色：深色玻璃 / 浅色玻璃（半透明，配合系统原生 Acrylic 模糊） */
+  --glass-bg: rgba(24, 26, 34, var(--glass-opacity));
+  --glass-bg-strong: rgba(24, 26, 34, calc(var(--glass-opacity) + 0.25));
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.06);
+
+  --text-primary: rgba(235, 238, 248, 0.95);
+  --text-secondary: rgba(180, 186, 205, 0.75);
+  --text-muted: rgba(150, 156, 178, 0.55);
+
+  --accent: #6366f1;
+  --accent-hover: #7c7ff5;
+  --accent-soft: rgba(99, 102, 241, 0.18);
+
+  --urgent: #f87171;
+  --warning: #fbbf24;
+  --ok: #34d399;
+
+  --surface-hover: rgba(255, 255, 255, 0.07);
+  --surface-active: rgba(255, 255, 255, 0.12);
+
+  color-scheme: dark;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+html:not(.dark) {
+  --glass-bg: rgba(246, 247, 251, var(--glass-opacity));
+  --glass-bg-strong: rgba(246, 247, 251, calc(var(--glass-opacity) + 0.2));
+  --glass-border: rgba(15, 20, 40, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.55);
+
+  --text-primary: rgba(22, 26, 40, 0.95);
+  --text-secondary: rgba(60, 66, 90, 0.75);
+  --text-muted: rgba(90, 96, 120, 0.55);
+
+  --accent: #4f46e5;
+  --accent-hover: #6366f1;
+  --accent-soft: rgba(79, 70, 229, 0.14);
+
+  --surface-hover: rgba(20, 30, 60, 0.06);
+  --surface-active: rgba(20, 30, 60, 0.1);
+
+  color-scheme: light;
+}
+
+/* 关闭玻璃效果时的不透明降级背景 */
+html.no-glass {
+  --glass-bg: rgb(24, 26, 34);
+  --glass-bg-strong: rgb(32, 35, 46);
+}
+html.no-glass:not(.dark) {
+  --glass-bg: rgb(246, 247, 251);
+  --glass-bg-strong: rgb(255, 255, 255);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* 透明窗口：body 必须透明，圆角由应用根容器绘制 */
+body {
+  background: transparent;
+  overflow: hidden;
+  font-family:
+    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei",
+    system-ui, -apple-system, sans-serif;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* 可选中文本区域（描述、输入框） */
+.selectable,
+input,
+textarea {
+  user-select: text;
+}
+
+/* ===== 滚动条 ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 134, 160, 0.35) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(128, 134, 160, 0.35);
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ===== 玻璃面板 ===== */
+.glass-panel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-highlight),
+    0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.glass-subtle {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+}
+.dark .glass-subtle {
+  background: rgba(255, 255, 255, 0.05);
+}
+html:not(.dark) .glass-subtle {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 悬停浮起效果 */
+.hover-surface {
+  transition: background-color 150ms ease;
+}
+.hover-surface:hover {
+  background: var(--surface-hover);
+}
+
+/* 紧急程度颜色 */
+.text-urgent { color: var(--urgent); }
+.text-warning { color: var(--warning); }
+.text-ok { color: var(--ok); }
+.text-muted-custom { color: var(--text-muted); }
+.text-secondary-custom { color: var(--text-secondary); }
+
+/* 优先级指示条 */
+.prio-high { background: #ef4444; }
+.prio-medium { background: #f59e0b; }
+.prio-low { background: #64748b; }
+
+/* 微交互动画 */
+@keyframes checkit-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.anim-fade-in {
+  animation: checkit-fade-in 160ms ease-out;
+}
+
+@keyframes checkit-pop {
+  0% { opacity: 0; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.anim-pop {
+  animation: checkit-pop 140ms ease-out;
+}
+
+/* 复选框勾选动画 */
+@keyframes checktick {
+  from { stroke-dashoffset: 20; }
+  to { stroke-dashoffset: 0; }
+}
+.checkmark-path {
+  stroke-dasharray: 20;
+  animation: checktick 180ms ease-out forwards;
+}
+
+/* 输入框基础样式 */
+.field-input {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 150ms ease;
+}
+html:not(.dark) .field-input {
+  background: rgba(255, 255, 255, 0.6);
+}
+.field-input:focus {
+  border-color: var(--accent);
+}
+.field-input::placeholder {
+  color: var(--text-muted);
+}
