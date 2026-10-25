@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Check it. Get it done. 玻璃态桌面任务管理与截止时间提醒工具"
 authors = ["CheckIt Contributors"]
 license = "MIT"
-repository = ""
+repository = "https://github.com/Zane-up/CheckIt"
 edition = "2021"
 rust-version = "1.77.2"
 
