@@ -1,7 +1,5 @@
 //! CheckIt 数据模型：与前端 src/types 一一对应（serde snake_case）。
 
-use serde::{Deserialize, Serialize};
-
 pub mod category;
 pub mod settings;
 pub mod task;

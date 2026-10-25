@@ -101,15 +101,17 @@ pub fn restore_widget_geometry(app: &AppHandle) {
 
     // 位置钳制：确保窗口至少有 80px 落在某个显示器可见区域内
     let mut valid = false;
-    if let Ok(monitor) = widget.current_monitor() {
-        if let Some(m) = monitor {
-            let pos = m.position();
-            let size = m.size();
-            valid = x >= pos.x as f64 - w + 80.0
-                && y >= pos.y as f64 - h + 80.0
-                && x <= (pos.x + size.width) as f64 - 80.0
-                && y <= (pos.y + size.height) as f64 - 80.0;
-        }
+    if let Ok(Some(m)) = widget.current_monitor() {
+        let m_pos = m.position();
+        let m_size = m.size();
+        let px = m_pos.x as f64;
+        let py = m_pos.y as f64;
+        let pw = m_size.width as f64;
+        let ph = m_size.height as f64;
+        valid = x >= px - w + 80.0
+            && y >= py - h + 80.0
+            && x <= px + pw - 80.0
+            && y <= py + ph - 80.0;
     }
     if valid {
         let _ = widget.set_position(LogicalPosition::new(x, y));
@@ -171,19 +173,30 @@ pub fn apply_window_behaviors(app: &AppHandle, settings: &AppSettings) {
 pub fn apply_glass_effect(window: &tauri::WebviewWindow, enabled: bool) {
     #[cfg(target_os = "windows")]
     {
-        use tauri::window::{Color, Effect, EffectState, WindowEffectsConfig};
+        use tauri::utils::config::WindowEffectsConfig;
+        use tauri::window::{Color, Effect, EffectState};
         if enabled {
             let config = WindowEffectsConfig {
                 effects: vec![Effect::Acrylic],
                 state: Some(EffectState::Active),
                 radius: None,
-                color: Color(0, 0, 0, 0),
+                color: Some(Color(0, 0, 0, 0)),
+                interactive: false,
             };
             if let Err(e) = window.set_effects(config) {
                 log::warn!("原生玻璃效果不可用，使用 CSS 半透明降级: {e}");
             }
-        } else if let Err(e) = window.set_effects(WindowEffectsConfig::default()) {
-            log::warn!("清除窗口效果失败: {e}");
+        } else {
+            let cleared = WindowEffectsConfig {
+                effects: vec![],
+                state: None,
+                radius: None,
+                color: Some(Color(0, 0, 0, 0)),
+                interactive: false,
+            };
+            if let Err(e) = window.set_effects(cleared) {
+                log::warn!("清除窗口效果失败: {e}");
+            }
         }
     }
     #[cfg(not(target_os = "windows"))]

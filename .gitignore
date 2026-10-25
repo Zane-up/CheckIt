@@ -6,6 +6,8 @@ dist/
 # Tauri / Rust
 src-tauri/target/
 src-tauri/gen/schemas/
+# 本机构建镜像配置（不入库）
+src-tauri/.cargo/config.toml
 
 # 编辑器
 .vscode/*

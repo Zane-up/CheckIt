@@ -180,15 +180,18 @@ impl Database {
     // ===== 任务 =====
 
     fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
+        let priority: String = row.get("priority")?;
+        let status: String = row.get("status")?;
         Ok(Task {
             id: row.get("id")?,
             title: row.get("title")?,
             description: row.get("description")?,
             category_id: row.get("category_id")?,
-            priority: Priority::parse(&row.get::<String, _>("priority")?).unwrap_or(Priority::Medium),
-            status: match row.get::<String, _>("status")?.as_str() {
-                "completed" => TaskStatus::Completed,
-                _ => TaskStatus::Pending,
+            priority: Priority::parse(&priority).unwrap_or(Priority::Medium),
+            status: if status == "completed" {
+                TaskStatus::Completed
+            } else {
+                TaskStatus::Pending
             },
             due_at: row.get("due_at")?,
             created_at: row.get("created_at")?,
@@ -353,10 +356,11 @@ impl Database {
         let now = now_iso();
         let conn = self.conn.lock();
         let affected = conn.execute(
-            "UPDATE tasks SET status = ?1, completed_at = ?2, updated_at = ?2 WHERE id = ?3",
+            "UPDATE tasks SET status = ?1, completed_at = ?2, updated_at = ?3 WHERE id = ?4",
             rusqlite::params![
                 if completed { "completed" } else { "pending" },
-                if completed { Some(&now) } else { None::<String> },
+                if completed { Some(&now) } else { None },
+                now,
                 id
             ],
         )?;

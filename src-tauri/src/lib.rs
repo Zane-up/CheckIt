@@ -18,7 +18,6 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::commands::CheckItState;
 use crate::database::Database;
-use crate::models;
 use crate::reminders::ReminderEngine;
 
 /// 提醒扫描间隔（空闲时）；可通过 wake 通道立即唤醒
@@ -145,7 +144,7 @@ pub fn run() {
             let (wake_tx, wake_rx) = mpsc::channel::<()>();
             app.manage(CheckItState {
                 db: db.clone(),
-                wake: std::sync::Mutex::new(wake_tx),
+                wake: parking_lot::Mutex::new(wake_tx),
             });
 
             // 应用启动行为（置顶/玻璃）与窗口几何恢复

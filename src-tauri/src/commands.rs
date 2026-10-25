@@ -3,8 +3,8 @@
 //! 并唤醒提醒调度器立即重扫（加速编辑/删除任务后的队列更新）。
 
 use std::sync::mpsc::Sender;
-use std::sync::Mutex;
 
+use parking_lot::Mutex;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -100,8 +100,8 @@ pub fn update_settings(app: AppHandle, state: tauri::State<CheckItState>, patch:
 }
 
 /// 设置补丁：只覆盖前端传入的字段（Option 字段 = 不修改）
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case", default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct SettingsPatch {
     theme: Option<String>,
     glass_enabled: Option<bool>,
@@ -149,7 +149,7 @@ impl SettingsPatch {
 /// 手动触发一次提醒检查（前端聚焦窗口 / 显式调用时加速补查）
 #[tauri::command]
 pub fn check_reminders_now(state: tauri::State<CheckItState>) -> Result<(), String> {
-    let _ = state.wake.send(());
+    let _ = state.wake.lock().send(());
     Ok(())
 }
 
