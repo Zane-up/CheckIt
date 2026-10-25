@@ -78,7 +78,7 @@ npm run tauri build
 3. 点击标题栏 `+` 快速添加任务；点击「全部任务」打开完整管理窗口。
 4. 关闭悬浮窗默认隐藏到系统托盘，提醒继续生效；可在设置中改为"关闭即退出"。
 
-数据目录：`%APPDATA%\com.checkit.app\checkit.db`（SQLite，可随时备份）。
+数据目录：`%APPDATA%\com.checkit.desktop\checkit.db`（SQLite，可随时备份）。
 
 ## 项目结构
 

@@ -162,21 +162,31 @@ pub fn get_db_path(app: AppHandle) -> Result<String, String> {
     Ok(dir.join("checkit.db").to_string_lossy().to_string())
 }
 
-/// 打开（或聚焦）完整管理窗口
+/// 打开（或聚焦）完整管理窗口。
+/// 必须为 async：在 sync command 的执行上下文中同步创建窗口会阻塞
+/// （WebView2 controller 初始化完成事件无法送达），导致命令永不返回。
 #[tauri::command]
-pub fn open_manager(app: AppHandle) -> Result<(), String> {
-    crate::windows::open_manager(&app).map_err(|e| e.to_string())
+pub async fn open_manager(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::windows::open_manager(&app).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 显示悬浮小组件
 #[tauri::command]
-pub fn show_widget(app: AppHandle) -> Result<(), String> {
-    crate::windows::show_widget(&app).map_err(|e| e.to_string())
+pub async fn show_widget(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::windows::show_widget(&app).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 托盘请求悬浮窗打开快速添加面板
 #[tauri::command]
-pub fn trigger_quick_add(app: AppHandle) -> Result<(), String> {
+pub async fn trigger_quick_add(app: AppHandle) -> Result<(), String> {
     crate::windows::show_widget(&app).map_err(|e| e.to_string())?;
     let _ = app.emit("widget-quick-add", ());
     Ok(())

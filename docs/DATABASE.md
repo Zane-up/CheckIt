@@ -1,6 +1,6 @@
 # DATABASE — 数据库设计
 
-文件位置：`%APPDATA%\com.checkit.app\checkit.db`（SQLite，WAL 模式，busy_timeout 2s，外键开启）
+文件位置：`%APPDATA%\com.checkit.desktop\checkit.db`（SQLite，WAL 模式，busy_timeout 2s，外键开启）
 
 ## ER 概览
 
