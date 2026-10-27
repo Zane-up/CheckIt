@@ -5,16 +5,20 @@
 //! - 使用 WAL 模式支持多窗口并发读写
 //! - 全部查询使用参数绑定，杜绝 SQL 注入
 //! - 日期统一存储 RFC3339 UTC 字符串
+//! - 多步业务写入（任务+提醒、设置批量键）包裹在显式事务中，失败整体回滚
+//! - reminder_events 是提醒去重 + 状态机表（pending/submitted/failed/skipped/cancelled），
+//!   以 (task_id, offset_seconds, due_at_snapshot) 为唯一键：改期后旧记录自然失效
 
 use std::path::Path;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
 use crate::models::task::{normalize_reminder_offsets, Priority, Task, TaskInput, TaskStatus};
-use crate::models::{AppSettings, Category};
+use crate::models::{AppSettings, Category, SettingsPatch};
 
 pub mod error;
 
@@ -24,6 +28,14 @@ pub type DbResult<T> = Result<T, DbError>;
 
 #[cfg(test)]
 mod tests;
+
+/// 提醒事件状态（精确语义见 docs/DATABASE.md）：
+/// - pending   : 已领取、等待后台提交（即 queued；进程崩溃后按 stale 规则恢复）
+/// - submitted : 底层系统通知 API 已受理（不是"用户已看到横幅"）
+/// - failed    : 底层提交失败；attempts < 上限且未超宽限时可重试
+/// - skipped   : 静默终止（通知关闭 / 超过 15 分钟补发宽限），不再发送
+/// - cancelled : 动作失效（任务完成、删除、改期或提醒 offset 被移除）
+pub const REMINDER_STATES: [&str; 5] = ["pending", "submitted", "failed", "skipped", "cancelled"];
 
 /// 全局共享的数据库连接（内部可变性 + 互斥）
 #[derive(Clone)]
@@ -73,7 +85,7 @@ impl Database {
         Ok(db)
     }
 
-    /// 版本化迁移。schema_migrations 记录已应用版本。
+    /// 版本化迁移。schema_migrations 记录已应用版本，逐个顺序执行。
     fn migrate(&self, path: &Path) -> DbResult<()> {
         let conn = self.conn.lock();
 
@@ -150,17 +162,98 @@ impl Database {
             log::info!("数据库迁移 v1 已应用 ({})", path.display());
         }
 
+        // —— 迁移 v2：reminder_events 升级为 due_at 快照 + 状态机 ——
+        // 背景：v1 先记后发导致崩溃漏发无法恢复；(task_id, offset) 键在改期后互相抑制。
+        // v2 键为 (task_id, offset_seconds, due_at_snapshot)，改期产生新键、旧键自然失效；
+        // state 区分 pending/sent/failed/skipped/cancelled，pending 崩溃后可恢复重试。
+        // 旧数据兼容：历史行视为已提交（sent），snapshot 回填任务当前 due_at，
+        // 对未改期的任务保持与 v1 完全一致的去重效果。
+        // 注意：条件是 current < 2（新建库 current=0 但 v1 刚在本次打开中建好，也需应用 v2）。
+        if current < 2 {
+            conn.execute_batch(
+                "BEGIN;
+                CREATE TABLE reminder_events_v2 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL,
+                    offset_seconds INTEGER NOT NULL,
+                    due_at_snapshot TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (state IN ('pending','sent','failed','skipped','cancelled')),
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (task_id, offset_seconds, due_at_snapshot)
+                );
+
+                INSERT INTO reminder_events_v2
+                    (task_id, offset_seconds, due_at_snapshot, state, attempts, created_at, updated_at)
+                SELECT e.task_id, e.offset_seconds, COALESCE(t.due_at, ''), 'sent', 0, e.fired_at, e.fired_at
+                FROM reminder_events e LEFT JOIN tasks t ON t.id = e.task_id;
+
+                DROP TABLE reminder_events;
+                ALTER TABLE reminder_events_v2 RENAME TO reminder_events;
+                CREATE INDEX idx_reminder_events_task ON reminder_events(task_id);
+                CREATE INDEX idx_reminder_events_state ON reminder_events(state);
+
+                INSERT INTO schema_migrations (version, applied_at)
+                VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                COMMIT;",
+            )?;
+            log::info!("数据库迁移 v2（提醒状态机）已应用 ({})", path.display());
+        }
+
+        // —— 迁移 v3：sent → submitted（语义精确化） ——
+        // 背景：旧的 state='sent' 实际只表示 notify-rust 提交成功（OS 受理），
+        // 但名称容易被误解为"用户已收到"。v3 起使用 submitted 明确"系统 API 已受理"。
+        // 同时保留 failed/skipped/cancelled/pending；历史数据逐行迁移，不删除任何事件记录。
+        // 需要重建表以更新 CHECK 约束（SQLite 不支持直接修改 CHECK）。
+        if current < 3 {
+            conn.execute_batch(
+                "BEGIN;
+                CREATE TABLE reminder_events_v3 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL,
+                    offset_seconds INTEGER NOT NULL,
+                    due_at_snapshot TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (state IN ('pending','submitted','failed','skipped','cancelled')),
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (task_id, offset_seconds, due_at_snapshot)
+                );
+
+                INSERT INTO reminder_events_v3
+                    (id, task_id, offset_seconds, due_at_snapshot, state, attempts, created_at, updated_at)
+                SELECT id, task_id, offset_seconds, due_at_snapshot,
+                       CASE state WHEN 'sent' THEN 'submitted' ELSE state END,
+                       attempts, created_at, updated_at
+                FROM reminder_events;
+
+                DROP TABLE reminder_events;
+                ALTER TABLE reminder_events_v3 RENAME TO reminder_events;
+                CREATE INDEX idx_reminder_events_task ON reminder_events(task_id);
+                CREATE INDEX idx_reminder_events_state ON reminder_events(state);
+
+                INSERT INTO schema_migrations (version, applied_at)
+                VALUES (3, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                COMMIT;",
+            )?;
+            log::info!("数据库迁移 v3（submitted 语义）已应用 ({})", path.display());
+        }
+
         Ok(())
     }
 
     /// 初始化默认分类（仅当分类表为空时）。
     pub fn ensure_default_categories(&self) -> DbResult<()> {
-        let conn = self.conn.lock();
+        let mut conn = self.conn.lock();
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))?;
         if count > 0 {
             return Ok(());
         }
         let now = now_iso();
+        let tx = conn.transaction()?;
         let defaults = [
             ("学习", "#6366f1", 0),
             ("工作", "#0ea5e9", 1),
@@ -169,11 +262,12 @@ impl Database {
             ("其他", "#64748b", 4),
         ];
         for (name, color, order) in defaults {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO categories (name, color, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)",
                 rusqlite::params![name, color, order, now],
             )?;
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -201,18 +295,28 @@ impl Database {
         })
     }
 
-    fn load_reminders(conn: &Connection, task_id: i64) -> Vec<i64> {
-        let mut stmt = match conn.prepare(
-            "SELECT offset_seconds FROM reminders WHERE task_id = ?1 ORDER BY offset_seconds",
-        ) {
-            Ok(s) => s,
-            Err(_) => return Vec::new(),
-        };
-        let rows = stmt.query_map([task_id], |r| r.get::<_, i64>(0));
-        match rows {
-            Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
-            Err(_) => Vec::new(),
+    /// 批量加载多个任务的提醒配置（单次查询，避免逐任务 N+1）。
+    /// 读取失败显式传播，不再吞错返回空。
+    fn load_reminders_batch(conn: &Connection, task_ids: &[i64]) -> DbResult<std::collections::HashMap<i64, Vec<i64>>> {
+        let mut map = std::collections::HashMap::with_capacity(task_ids.len());
+        if task_ids.is_empty() {
+            return Ok(map);
         }
+        let placeholders = task_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT task_id, offset_seconds FROM reminders WHERE task_id IN ({placeholders}) ORDER BY task_id, offset_seconds"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            task_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let rows = stmt.query_map(params.as_slice(), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        for row in rows {
+            let (task_id, offset) = row?;
+            map.entry(task_id).or_default().push(offset);
+        }
+        Ok(map)
     }
 
     fn load_tasks_where(
@@ -228,15 +332,16 @@ impl Database {
              due_at IS NULL, due_at ASC, id ASC"
         );
         let mut stmt = conn.prepare(&sql)?;
+        // 行解析失败立即返回错误，不静默丢行
         let tasks: Vec<Task> = stmt
             .query_map(params, Self::row_to_task)?
-            .filter_map(|r| r.ok())
-            .collect();
-        // 附加提醒配置
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let ids: Vec<i64> = tasks.iter().map(|t| t.id).collect();
+        let mut reminder_map = Self::load_reminders_batch(conn, &ids)?;
         Ok(tasks
             .into_iter()
             .map(|mut t| {
-                t.reminders = Self::load_reminders(conn, t.id);
+                t.reminders = reminder_map.remove(&t.id).unwrap_or_default();
                 t
             })
             .collect())
@@ -282,6 +387,7 @@ impl Database {
         tasks.into_iter().next().ok_or(DbError::NotFound)
     }
 
+    /// 创建任务 + 提醒配置（单事务：任一步失败整体回滚，不留半成品任务）。
     pub fn create_task(&self, input: &TaskInput) -> DbResult<Task> {
         let title = input.title.trim();
         if title.is_empty() {
@@ -291,8 +397,9 @@ impl Database {
         let reminders = normalize_reminder_offsets(&input.reminders);
         let now = now_iso();
 
-        let conn = self.conn.lock();
-        conn.execute(
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT INTO tasks (title, description, category_id, priority, status, due_at, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?6)",
             rusqlite::params![
@@ -304,17 +411,22 @@ impl Database {
                 now
             ],
         )?;
-        let id = conn.last_insert_rowid();
+        let id = tx.last_insert_rowid();
         for &offset in &reminders {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO reminders (task_id, offset_seconds) VALUES (?1, ?2)",
                 rusqlite::params![id, offset],
             )?;
         }
+        tx.commit()?;
         drop(conn);
         self.get_task(id)
     }
 
+    /// 更新任务 + 替换提醒配置（单事务）。
+    ///
+    /// 不再删除 reminder_events：v2 起事件以 due_at 快照为键，
+    /// 改期产生新的快照键、旧键对应的 pending 动作会在发送前校验中自然失效。
     pub fn update_task(&self, id: i64, input: &TaskInput) -> DbResult<Task> {
         let title = input.title.trim();
         if title.is_empty() {
@@ -324,34 +436,36 @@ impl Database {
         let reminders = normalize_reminder_offsets(&input.reminders);
         let now = now_iso();
 
-        let conn = self.conn.lock();
-        // 截止时间变更后需要重新计算提醒：清除旧的触发记录，让未来的提醒可以再次触发
-        let old_due: Option<String> = conn
-            .query_row("SELECT due_at FROM tasks WHERE id = ?1", [id], |r| r.get(0))
-            .map_err(|_| DbError::NotFound)?;
-        if old_due != input.due_at {
-            conn.execute("DELETE FROM reminder_events WHERE task_id = ?1", [id])?;
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        // 校验任务存在（在事务内完成，避免与并发删除竞态）
+        let exists: bool = tx
+            .query_row("SELECT COUNT(*) FROM tasks WHERE id = ?1", [id], |r| {
+                r.get::<_, i64>(0)
+            })
+            .map(|c| c > 0)?;
+        if !exists {
+            return Err(DbError::NotFound);
         }
-        conn.execute(
+        tx.execute(
             "UPDATE tasks SET title = ?1, description = ?2, category_id = ?3, priority = ?4, due_at = ?5, updated_at = ?6
              WHERE id = ?7",
             rusqlite::params![title, input.description.trim(), input.category_id, input.priority.as_str(), input.due_at, now, id],
         )?;
-        // 重置提醒配置
-        conn.execute("DELETE FROM reminders WHERE task_id = ?1", [id])?;
+        tx.execute("DELETE FROM reminders WHERE task_id = ?1", [id])?;
         for &offset in &reminders {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO reminders (task_id, offset_seconds) VALUES (?1, ?2)",
                 rusqlite::params![id, offset],
             )?;
         }
+        tx.commit()?;
         drop(conn);
         self.get_task(id)
     }
 
     /// 设置任务完成状态。
-    /// 已触发的提醒记录保留（事件只在其调度时刻已过后才会产生，
-    /// 因此恢复为待办后：已过期的提醒不会重复弹出，未来的提醒照常触发）。
+    /// 已触发/已记录的提醒事件保留（快照键天然区分，恢复待办后未来的提醒照常触发）。
     pub fn set_task_status(&self, id: i64, completed: bool) -> DbResult<Task> {
         let now = now_iso();
         let conn = self.conn.lock();
@@ -371,7 +485,7 @@ impl Database {
         self.get_task(id)
     }
 
-    /// 删除任务（提醒配置级联删除）。
+    /// 删除任务（提醒配置级联删除；reminder_events 保留历史不影响去重——任务删除后不会再有新事件）。
     pub fn delete_task(&self, id: i64) -> DbResult<()> {
         let conn = self.conn.lock();
         let affected = conn.execute("DELETE FROM tasks WHERE id = ?1", [id])?;
@@ -381,27 +495,103 @@ impl Database {
         Ok(())
     }
 
-    // ===== 提醒事件（幂等记录）=====
+    // ===== 提醒事件（去重 + 状态机）=====
 
-    /// 记录提醒触发；返回 false 表示该提醒已触发过（幂等）。
-    pub fn record_reminder_fired(&self, task_id: i64, offset_seconds: i64) -> DbResult<bool> {
+    /// 领取一个到期提醒：INSERT OR IGNORE (task_id, offset, due_snapshot) 行。
+    /// 返回 Some(是否需要通知) 表示首次领取成功；None 表示已存在（已领取过）。
+    /// grace 内 → pending（queued，待提交）；超宽限/通知关闭 → skipped（静默标记）。
+    ///
+    /// `now` 由调用方（统一时钟）传入，扫描、恢复与状态时间戳使用同一时间来源。
+    pub fn claim_reminder(
+        &self,
+        task_id: i64,
+        offset_seconds: i64,
+        due_at_snapshot: &str,
+        quiet: bool,
+        now: DateTime<Utc>,
+    ) -> DbResult<Option<bool>> {
         let conn = self.conn.lock();
+        let now = format_iso(now);
+        let state = if quiet { "skipped" } else { "pending" };
         let affected = conn.execute(
-            "INSERT OR IGNORE INTO reminder_events (task_id, offset_seconds, fired_at) VALUES (?1, ?2, ?3)",
-            rusqlite::params![task_id, offset_seconds, now_iso()],
+            "INSERT OR IGNORE INTO reminder_events
+                (task_id, offset_seconds, due_at_snapshot, state, attempts, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?5)",
+            rusqlite::params![task_id, offset_seconds, due_at_snapshot, state, now],
         )?;
-        Ok(affected > 0)
+        if affected == 0 {
+            return Ok(None);
+        }
+        // 返回“是否为待通知领取”（skipped 也算首次，但不需要通知）
+        Ok(Some(!quiet))
     }
 
-    /// 判断某个 (task, offset) 是否已经触发过。
-    pub fn reminder_already_fired(&self, task_id: i64, offset_seconds: i64) -> DbResult<bool> {
+    /// 标记事件状态（pending→submitted/failed/skipped/cancelled、failed→重试等）。
+    /// `now` 同时用于 updated_at，保证崩溃检测/重试间隔与扫描时钟一致。
+    pub fn set_reminder_state(
+        &self,
+        task_id: i64,
+        offset_seconds: i64,
+        due_at_snapshot: &str,
+        state: &str,
+        bump_attempts: bool,
+        now: DateTime<Utc>,
+    ) -> DbResult<()> {
+        debug_assert!(REMINDER_STATES.contains(&state));
         let conn = self.conn.lock();
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM reminder_events WHERE task_id = ?1 AND offset_seconds = ?2",
-            rusqlite::params![task_id, offset_seconds],
-            |r| r.get(0),
+        let affected = conn.execute(
+            "UPDATE reminder_events SET state = ?4,
+                attempts = CASE WHEN ?5 THEN attempts + 1 ELSE attempts END,
+                updated_at = ?6
+             WHERE task_id = ?1 AND offset_seconds = ?2 AND due_at_snapshot = ?3",
+            rusqlite::params![
+                task_id,
+                offset_seconds,
+                due_at_snapshot,
+                state,
+                bump_attempts,
+                format_iso(now)
+            ],
         )?;
-        Ok(count > 0)
+        if affected == 0 {
+            log::warn!(
+                "提醒事件不存在，状态更新被忽略: task={task_id} offset={offset_seconds} state={state}"
+            );
+        }
+        Ok(())
+    }
+
+    /// 取回需要（重）尝试的行（全部与调用方传入的同一 `now` 比较）：
+    /// - pending 且已停留超过 stale_secs（进程在提交前崩溃的痕迹）
+    /// - failed 且 attempts < max_attempts，且距上次失败已过 retry_backoff_secs
+    /// 调用方还需在发送前做统一有效性校验（任务/offset/开关/宽限）。
+    pub fn recoverable_reminders(
+        &self,
+        stale_secs: i64,
+        retry_backoff_secs: i64,
+        max_attempts: i32,
+        now: DateTime<Utc>,
+    ) -> DbResult<Vec<ReminderEventRow>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT task_id, offset_seconds, due_at_snapshot, state, attempts,
+                    strftime('%s', updated_at) AS upd
+             FROM reminder_events
+             WHERE (state = 'pending' AND ?1 - upd >= ?2)
+                OR (state = 'failed' AND attempts < ?3 AND ?1 - upd >= ?4)",
+        )?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![
+                    now.timestamp(),
+                    stale_secs,
+                    max_attempts,
+                    retry_backoff_secs
+                ],
+                row_to_event,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     // ===== 分类 =====
@@ -423,8 +613,7 @@ impl Database {
         )?;
         let cats = stmt
             .query_map([], Self::row_to_category)?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(cats)
     }
 
@@ -495,8 +684,8 @@ impl Database {
         let rows = stmt.query_map([], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         })?;
-        for row in rows.filter_map(|r| r.ok()) {
-            let (key, value) = row;
+        for row in rows {
+            let (key, value) = row?;
             match key.as_str() {
                 "theme" => settings.theme = value,
                 "glass_enabled" => settings.glass_enabled = value == "true",
@@ -530,9 +719,9 @@ impl Database {
         Self::load_settings_inner(&conn)
     }
 
-    pub fn save_settings(&self, settings: &AppSettings) -> DbResult<()> {
+    /// 写入全部设置键（调用方必须已处于事务中并由其提交/回滚）。
+    fn save_settings_inner(conn: &Connection, settings: &AppSettings) -> DbResult<()> {
         let s = settings.clone().sanitized();
-        let conn = self.conn.lock();
         let entries: [(&str, String); 9] = [
             ("theme", s.theme.clone()),
             ("glass_enabled", s.glass_enabled.to_string()),
@@ -557,9 +746,46 @@ impl Database {
         Ok(())
     }
 
-    // ===== 窗口几何 =====
+    /// 批量保存设置（单事务：任一键写入失败整体回滚，不留半套设置）。
+    pub fn save_settings(&self, settings: &AppSettings) -> DbResult<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        Self::save_settings_inner(&tx, settings)?;
+        tx.commit()?;
+        Ok(())
+    }
 
-    /// 读取窗口几何（key 如 widget_x / widget_y / widget_w / widget_h）
+    /// **原子设置补丁**：在同一个互斥锁/事务内完成"读取当前值 → 应用修改 → 保存"。
+    ///
+    /// 这是设置写入的唯一底层入口。任何"先 load_settings 再 save_settings"的组合
+    /// 都会在当前值与保存之间释放锁，导致并发补丁互相覆盖未修改字段。
+    pub fn update_settings_atomic<F>(&self, apply: F) -> DbResult<AppSettings>
+    where
+        F: FnOnce(&mut AppSettings),
+    {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        let mut settings = Self::load_settings_inner(&tx)?;
+        apply(&mut settings);
+        let settings = settings.sanitized();
+        Self::save_settings_inner(&tx, &settings)?;
+        tx.commit()?;
+        Ok(settings)
+    }
+
+    /// 应用设置补丁（只覆盖 patch 中出现的字段）。
+    pub fn apply_settings_patch(&self, patch: &SettingsPatch) -> DbResult<AppSettings> {
+        self.update_settings_atomic(|settings| patch.apply_to(settings))
+    }
+
+    /// 原子翻转置顶设置。窗口调用由调用方在锁外完成。
+    pub fn toggle_always_on_top(&self) -> DbResult<AppSettings> {
+        self.update_settings_atomic(|settings| settings.always_on_top = !settings.always_on_top)
+    }
+
+    // ===== 窗口几何（物理像素存储，跨 DPI 一致）=====
+
+    /// 读取窗口几何（物理像素；v2 键名带 _px 后缀，与旧逻辑像素键区分）
     pub fn load_window_geometry(&self, prefix: &str) -> Option<(f64, f64, f64, f64)> {
         let conn = self.conn.lock();
         let get = |key: &str| -> Option<f64> {
@@ -572,35 +798,76 @@ impl Database {
             .parse()
             .ok()
         };
-        let x = get(&format!("{prefix}_x"))?;
-        let y = get(&format!("{prefix}_y"))?;
-        let w = get(&format!("{prefix}_w"))?;
-        let h = get(&format!("{prefix}_h"))?;
+        let x = get(&format!("{prefix}_px_x"))?;
+        let y = get(&format!("{prefix}_px_y"))?;
+        let w = get(&format!("{prefix}_px_w"))?;
+        let h = get(&format!("{prefix}_px_h"))?;
         Some((x, y, w, h))
     }
 
+    /// 保存窗口几何（物理像素；单事务写入四个键）
     pub fn save_window_geometry(&self, prefix: &str, x: f64, y: f64, w: f64, h: f64) -> DbResult<()> {
-        let conn = self.conn.lock();
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
         let entries = [
-            (format!("{prefix}_x"), x),
-            (format!("{prefix}_y"), y),
-            (format!("{prefix}_w"), w),
-            (format!("{prefix}_h"), h),
+            (format!("{prefix}_px_x"), x),
+            (format!("{prefix}_px_y"), y),
+            (format!("{prefix}_px_w"), w),
+            (format!("{prefix}_px_h"), h),
         ];
         for (key, value) in entries {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
                  ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 rusqlite::params![key, value.to_string()],
             )?;
         }
+        tx.commit()?;
         Ok(())
     }
 }
 
-/// 当前 UTC 时间的 RFC3339 字符串
+/// 提醒事件行（恢复扫描用）
+#[derive(Debug, Clone)]
+pub struct ReminderEventRow {
+    pub task_id: i64,
+    pub offset_seconds: i64,
+    pub due_at_snapshot: String,
+    pub state: String,
+    pub attempts: i32,
+}
+
+fn row_to_event(row: &Row) -> rusqlite::Result<ReminderEventRow> {
+    Ok(ReminderEventRow {
+        task_id: row.get("task_id")?,
+        offset_seconds: row.get("offset_seconds")?,
+        due_at_snapshot: row.get("due_at_snapshot")?,
+        state: row.get("state")?,
+        attempts: row.get("attempts")?,
+    })
+}
+
+/// 指定 UTC 时间的 RFC3339 字符串（提醒状态机使用调用方时钟）
+pub fn format_iso(at: DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// 当前 UTC 时间的 RFC3339 字符串（一般 CRUD 使用）
 pub fn now_iso() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    format_iso(Utc::now())
+}
+
+/// 当前 Unix 秒（整数）
+pub fn unix_now() -> i64 {
+    Utc::now().timestamp()
+}
+
+/// 测试辅助：暴露内部连接（仅测试可见）
+#[cfg(test)]
+impl Database {
+    pub(crate) fn lock_conn_for_test(&self) -> parking_lot::MutexGuard<'_, Connection> {
+        self.conn.lock()
+    }
 }
 
 /// 校验 due_at 为合法 RFC3339 且可解析为时间。

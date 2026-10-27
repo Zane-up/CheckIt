@@ -114,6 +114,13 @@ mod tests {
         assert!(normalize_reminder_offsets(&[-5, 61 * 86400]).is_empty());
     }
 
+    /// 60 天为闭边界：恰好 60 天保留，超出 1 秒被滤除（自定义输入范围依据）。
+    #[test]
+    fn normalize_boundary_sixty_days() {
+        assert_eq!(normalize_reminder_offsets(&[60 * 86400]), vec![60 * 86400]);
+        assert!(normalize_reminder_offsets(&[60 * 86400 + 1]).is_empty());
+    }
+
     #[test]
     fn priority_roundtrip() {
         for p in PRIORITIES {

@@ -34,6 +34,9 @@ export const api = {
   updateSettings: (patch: Partial<AppSettings>) =>
     invoke<AppSettings>("update_settings", { patch }),
 
+  /** 切换悬浮窗置顶（唯一路径：窗口+设置+托盘+广播由后端原子完成） */
+  toggleAlwaysOnTop: () => invoke<boolean>("toggle_always_on_top"),
+
   /** 手动触发一次提醒检查（窗口聚焦/恢复时调用，加速补查） */
   checkRemindersNow: () => invoke<void>("check_reminders_now"),
 

@@ -15,21 +15,21 @@ interface CountdownBadgeProps {
 const URGENCY_COLOR: Record<Urgency, string> = {
   none: "var(--text-muted)",
   normal: "var(--text-secondary)",
-  warning: "var(--warning)",
-  urgent: "var(--urgent)",
-  overdue: "var(--urgent)",
+  warning: "var(--warning-text)",
+  urgent: "var(--urgent-text)",
+  overdue: "var(--urgent-text)",
   done: "var(--text-muted)",
 };
 
 export default function CountdownBadge({ dueAt, now, completed }: CountdownBadgeProps) {
   if (!dueAt) {
-    return <span className="text-[10px] text-[var(--text-muted)]">无截止</span>;
+    return <span className="whitespace-nowrap text-[11px] text-[var(--text-muted)]">无截止</span>;
   }
   const cd = computeCountdown(dueAt, now);
   if (!cd) return null;
 
   if (completed) {
-    return <span className="text-[10px] text-[var(--text-muted)]">已完成</span>;
+    return <span className="whitespace-nowrap text-[11px] text-[var(--text-muted)]">已完成</span>;
   }
 
   const color = URGENCY_COLOR[cd.urgency];
@@ -37,7 +37,7 @@ export default function CountdownBadge({ dueAt, now, completed }: CountdownBadge
 
   return (
     <span
-      className={`text-[10px] tabular-nums ${isHot ? "font-medium" : ""}`}
+      className={`whitespace-nowrap text-[11px] tabular-nums ${isHot ? "font-medium" : ""}`}
       style={{ color }}
     >
       {cd.text}

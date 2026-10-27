@@ -14,7 +14,9 @@
 - **任务管理**：新增 / 编辑 / 删除 / 完成 / 恢复，支持分类、优先级、截止时间
 - **动态倒计时**：按剩余时长自适应展示（天/小时/分钟/秒），紧急程度颜色提示，逾期标记
 - **多级提醒**：每个任务可配置多个提醒（提前 1 天 / 3 小时 / 1 小时 / 30 分钟 / 10 分钟 / 截止时 / 自定义）
-- **可靠调度**：Rust 后台调度器独立于窗口运行，提醒幂等去重，重启与休眠恢复后自动补查
+- **可靠调度**：Rust 后台调度器独立于窗口运行，快照键去重 + 状态机重试，重启与休眠恢复后按 15 分钟宽限补查；
+  每条提醒提交前重新取时校验，状态时间戳使用真实完成时刻
+- **单实例保护**：重复启动会唤醒已有悬浮窗，第二实例在数据库迁移与调度器启动前退出
 - **Windows 原生通知**：基于系统通知中心，不再依赖网页弹窗
 - **系统托盘**：关闭窗口可驻留后台继续提醒，托盘菜单快速操作
 - **SQLite 持久化**：全部数据本地存储于系统应用数据目录，完全离线可用
@@ -29,7 +31,7 @@
 | 构建 | Vite 8 |
 | 样式 | Tailwind CSS 4 |
 | 数据库 | SQLite（rusqlite，WAL 模式） |
-| 通知 / 自启动 | tauri-plugin-notification / tauri-plugin-autostart |
+| 通知 / 自启动 | notify-rust（同步 WinRT 提交）/ tauri-plugin-autostart / tauri-plugin-single-instance |
 | 测试 | Vitest（前端） + Rust 内置测试（后端） |
 | CI | GitHub Actions |
 
@@ -37,7 +39,7 @@
 
 开发与运行 CheckIt 需要：
 
-1. **Node.js** ≥ 20（含 npm）
+1. **Node.js** ≥ 22.12（Vite 8 / Vitest 5 的最低要求，推荐 22 LTS）
 2. **Rust** stable（MSVC 工具链）—— 通过 [rustup](https://rustup.rs) 安装
 3. **Microsoft Visual Studio C++ Build Tools**（MSVC v143 + Windows 10/11 SDK）
 
@@ -103,7 +105,8 @@ CheckIt/
 │       ├── commands.rs         # Tauri 命令层（写后广播同步）
 │       ├── database/           # SQLite：迁移/CRUD/测试
 │       ├── models/             # 数据模型（serde）
-│       ├── reminders/          # 提醒引擎（幂等/补发窗口，含测试）
+│       ├── reminders/          # 提醒引擎（状态机/快照去重/宽限恢复，含测试）
+│       ├── notification.rs     # 通知传输适配器（同步提交结果，可注入测试）
 │       ├── windows.rs          # 窗口管理（几何持久化/玻璃效果）
 │       ├── tray.rs             # 系统托盘
 │       └── settings.rs         # 开机启动同步

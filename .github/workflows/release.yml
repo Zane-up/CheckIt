@@ -30,16 +30,27 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: 安装依赖并测试
-        run: |
-          npm ci
-          npm run typecheck
-          npm run test
-          npm run build
+      - name: 安装依赖
+        run: npm ci
+
+      # 以下检查各自独立成步骤：任何一步失败立即终止工作流，
+      # 不允许后续构建成功掩盖前面的测试失败
+      - name: TypeScript 类型检查
+        run: npm run typecheck
+
+      - name: 前端单元测试
+        run: npm run test
+
+      - name: 前端生产构建
+        run: npm run build
 
       - name: Rust 测试
         working-directory: src-tauri
         run: cargo test
+
+      - name: Rust 编译检查
+        working-directory: src-tauri
+        run: cargo check --all-targets
 
       - name: 构建安装包
         run: npm run tauri build

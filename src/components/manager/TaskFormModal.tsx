@@ -1,16 +1,23 @@
 /**
  * 任务新建 / 编辑表单：标题、描述、分类、优先级、截止时间、多级提醒。
+ *
+ * 截止时间处理（关键规则）：
+ * - 进入表单时把 UTC 转为 datetime-local（分钟精度）仅用于展示；
+ * - 保存时若输入值与进入时一致，则**原样传回任务的原始 UTC 值**——
+ *   仅编辑标题/描述不会丢失秒数，也不会在夏令时重复时段偏移一小时；
+ * - 只有用户真正修改了输入值，才按本地时区重新解析为 UTC。
+ *   （datetime-local 无法表达重复时段的歧义，属于平台已知限制，见 docs/DECISIONS.md）
  */
 
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useAppData } from "@/hooks/useAppData";
 import { t } from "@/i18n/zh";
 import type { Priority, Task, TaskInput } from "@/types";
-import { CUSTOM_REMINDER_MINUTES, REMINDER_PRESETS, normalizeOffsets, offsetLabel } from "@/utils/reminders";
 import { localInputToUtcIso, utcIsoToLocalInput } from "@/utils/time";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Buttons";
+import { ReminderPicker } from "@/components/ui/ReminderPicker";
 
 interface TaskFormModalProps {
   /** null = 新建 */
@@ -28,34 +35,39 @@ export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
   const [priority, setPriority] = useState<Priority>(task?.priority ?? "medium");
   const [dueInput, setDueInput] = useState(utcIsoToLocalInput(task?.due_at ?? null));
   const [reminders, setReminders] = useState<number[]>(task?.reminders ?? state.settings.default_reminder_offsets);
+  /** 自定义提醒输入框存在未添加内容（保存前须先添加或清空） */
+  const [reminderDraft, setReminderDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  // 编辑已有任务时按需重置（Modal 每次打开是新实例，这里主要防御性处理）
-  useEffect(() => {
-    setTitle(task?.title ?? "");
-    setDescription(task?.description ?? "");
-  }, [task]);
+  /** 进入表单时的输入快照：保存时据此判断截止时间是否被真正修改 */
+  const initialDueInput = utcIsoToLocalInput(task?.due_at ?? null);
+  /** 在途保护：Enter / 按钮 / 保存快捷键重复触发只执行一次 */
+  const inFlight = useRef(false);
 
   const hasDue = dueInput !== "";
-
-  const toggleReminder = (offset: number) => {
-    setReminders((rs) => (rs.includes(offset) ? rs.filter((r) => r !== offset) : normalizeOffsets([...rs, offset])));
-  };
+  const dueChanged = dueInput !== initialDueInput;
 
   const save = async () => {
+    if (inFlight.current) return;
     const name = title.trim();
     if (!name) {
       setError(t.errors.titleRequired);
       return;
     }
+    if (reminderDraft) {
+      setError(t.errors.reminderDraftPending);
+      return;
+    }
+    inFlight.current = true;
     setSaving(true);
+    // 截止未动 → 传回原始 UTC（保秒、防 DST 偏移）；动了 → 按本地重新解析
+    const dueAt = dueChanged ? localInputToUtcIso(dueInput) : task?.due_at ?? null;
     const input: TaskInput = {
       title: name,
       description: description.trim(),
       category_id: categoryId,
       priority,
-      due_at: localInputToUtcIso(dueInput),
+      due_at: dueAt,
       reminders: hasDue ? reminders : [],
     };
     try {
@@ -67,7 +79,7 @@ export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.errors.saveFailed);
-    } finally {
+      inFlight.current = false;
       setSaving(false);
     }
   };
@@ -83,11 +95,19 @@ export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
     }
   };
 
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void save();
+    }
+  };
+
   return (
     <Modal open title={task ? t.task.edit : t.task.create} onClose={onClose} width={520}>
       <div className="flex flex-col gap-3.5">
         <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">{t.task.title} *</label>
+          <label className="mb-1 block text-[12px] font-medium text-[var(--text-secondary)]">{t.task.title} *</label>
           <input
             className="field-input"
             value={title}
@@ -98,9 +118,7 @@ export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
               setTitle(e.target.value);
               setError(null);
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) void save();
-            }}
+            onKeyDown={onKeyDown}
           />
         </div>
 
@@ -141,7 +159,7 @@ export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
                   onClick={() => setPriority(p)}
                   className={`flex-1 rounded-lg border px-2 py-1.5 text-xs transition-all ${
                     priority === p
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)] font-medium text-[var(--accent)]"
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]"
                       : "border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
                   }`}
                 >
@@ -156,7 +174,7 @@ export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
           <label className="mb-1 flex items-center justify-between text-xs font-medium text-[var(--text-secondary)]">
             {t.task.dueAt}
             {hasDue && (
-              <button type="button" className="text-[11px] text-[var(--text-muted)] hover:underline" onClick={() => setDueInput("")}>
+              <button type="button" className="text-[12px] font-normal text-[var(--text-secondary)] hover:underline" onClick={() => setDueInput("")}>
                 {t.task.clearDue}
               </button>
             )}
@@ -172,45 +190,17 @@ export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
         <div>
           <label className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">
             {t.task.reminders}
-            {!hasDue && <span className="ml-1.5 font-normal text-[var(--text-muted)]">（需先设置截止时间）</span>}
+            {!hasDue && <span className="ml-1.5 font-normal text-[var(--text-muted)]">（{t.task.reminderRequireDue}）</span>}
           </label>
-          <div className={`flex flex-wrap gap-1.5 ${hasDue ? "" : "pointer-events-none opacity-40"}`}>
-            {REMINDER_PRESETS.map(({ offsetSeconds, label }) => (
-              <button
-                key={offsetSeconds}
-                type="button"
-                onClick={() => toggleReminder(offsetSeconds)}
-                className={`rounded-full border px-2.5 py-1 text-[11px] transition-all ${
-                  reminders.includes(offsetSeconds)
-                    ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
-                    : "border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-            {CUSTOM_REMINDER_MINUTES.map((m) => {
-              const offset = m * 60;
-              if (REMINDER_PRESETS.some((p) => p.offsetSeconds === offset)) return null;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => toggleReminder(offset)}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] transition-all ${
-                    reminders.includes(offset)
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
-                      : "border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
-                  }`}
-                >
-                  {offsetLabel(offset)}
-                </button>
-              );
-            })}
-          </div>
+          <ReminderPicker
+            offsets={reminders}
+            onChange={setReminders}
+            disabled={!hasDue}
+            onDraftChange={setReminderDraft}
+          />
         </div>
 
-        {error && <div className="text-xs text-[var(--urgent)]">{error}</div>}
+        {error && <div className="text-[12px] text-[var(--urgent-text)]">{error}</div>}
 
         <div className="mt-1 flex items-center justify-between border-t border-[var(--glass-border)] pt-3">
           <div>

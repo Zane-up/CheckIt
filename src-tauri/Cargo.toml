@@ -21,8 +21,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# 单实例保护：第二次启动在 setup/数据库迁移/调度器之前被拦截。
+tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2"
+# 与 tauri-plugin-notification 共用底层实现；直接调用以取得同步提交结果。
+notify-rust = "4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }

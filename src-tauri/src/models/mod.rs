@@ -5,5 +5,5 @@ pub mod settings;
 pub mod task;
 
 pub use category::Category;
-pub use settings::AppSettings;
+pub use settings::{AppSettings, SettingsPatch};
 pub use task::{Priority, Task, TaskInput, TaskStatus};

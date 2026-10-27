@@ -2,7 +2,9 @@
 
 pub mod commands;
 pub mod database;
+pub mod diagnostics;
 pub mod models;
+pub mod notification;
 pub mod reminders;
 pub mod settings;
 pub mod tray;
@@ -14,11 +16,13 @@ use std::time::Duration;
 use chrono::Utc;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_notification::NotificationExt;
 
 use crate::commands::CheckItState;
 use crate::database::Database;
-use crate::reminders::ReminderEngine;
+use crate::notification::{NotificationTransport, SystemNotificationTransport};
+use crate::reminders::{
+    Clock, DeliveryOutcome, ReminderAction, ReminderEngine, SystemClock,
+};
 
 /// 提醒扫描间隔（空闲时）；可通过 wake 通道立即唤醒
 const SCHEDULER_INTERVAL_SECS: u64 = 5;
@@ -32,13 +36,19 @@ fn spawn_scheduler(app: AppHandle, wake_rx: mpsc::Receiver<()>) {
             None => return,
         };
         let engine = ReminderEngine::new(db);
+        // 真实提交适配器：同步调用 OS 通知 API 并保留底层结果。
+        // 安装版使用产品 identifier 作为 AUMID，开发版沿用底层库默认值。
+        let transport = SystemNotificationTransport::from_identifier(&app.config().identifier);
 
         loop {
-            // 立即扫描一次（启动补查 / 唤醒触发）
-            match engine.run_once(Utc::now()) {
+            // 一次扫描共用一个时钟：领取、恢复、宽限判断使用完全相同的 now。
+            let now = Utc::now();
+            match engine.run_once(now) {
                 Ok(actions) => {
                     for action in actions {
-                        dispatch_action(&app, &engine, action);
+                        // 扫描共用 now；每条动作真正提交前由 deliver_with_clock
+                        // 重新读取实时钟并再次校验宽限，避免睡眠/阻塞后沿用旧时间。
+                        dispatch_action(&app, &engine, action, &SystemClock, &transport);
                     }
                 }
                 Err(e) => log::error!("提醒扫描失败: {e}"),
@@ -57,83 +67,95 @@ fn spawn_scheduler(app: AppHandle, wake_rx: mpsc::Receiver<()>) {
     });
 }
 
-/// 执行提醒动作：发送 Windows 原生通知
-fn dispatch_action(app: &AppHandle, engine: &ReminderEngine, action: reminders::ReminderAction) {
-    let notifications_on = engine
-        .db()
-        .load_settings()
-        .map(|s| s.notifications_enabled)
-        .unwrap_or(true);
-
-    let (task_id, offset) = match &action {
-        reminders::ReminderAction::Notify { task_id, offset_seconds } => (*task_id, *offset_seconds),
-        reminders::ReminderAction::MarkMissed { task_id, .. } => {
-            log::info!("任务 {} 的过期提醒已静默标记", task_id);
-            return;
+/// 执行提醒动作：实时取时 → 统一校验 → 后台同步提交系统通知 → 状态机落库 → 广播。
+///
+/// 状态流转：
+/// - pending --系统 API 受理--> submitted
+/// - pending --底层提交失败--> failed(attempts+1，30s 后可重试，最多 3 次)
+/// - 任务完成/删除/改期/移除 offset --> cancelled
+/// - 通知关闭/超出 15 分钟宽限 --> skipped
+///
+/// submitted 仅表示 OS 受理，不保证用户看到横幅；崩溃窗口可能重复提交（at-least-once）。
+fn dispatch_action(
+    app: &AppHandle,
+    engine: &ReminderEngine,
+    action: ReminderAction,
+    clock: &dyn Clock,
+    transport: &dyn NotificationTransport,
+) {
+    match engine.deliver_with_clock(&action, clock, transport) {
+        Ok(DeliveryOutcome::Submitted { title }) => {
+            // 系统已受理后再广播，前端可据此显示应用内提示（语义与 submitted 对齐）。
+            let _ = app.emit(
+                "reminder-fired",
+                serde_json::json!({
+                    "task_id": action.task_id,
+                    "offset_seconds": action.offset_seconds,
+                    "title": title,
+                }),
+            );
         }
-    };
-
-    let Ok(task) = engine.db().get_task(task_id) else {
-        return;
-    };
-    // 通知构造期间任务可能已完成，二次确认
-    if task.status != models::TaskStatus::Pending {
-        return;
-    }
-
-    // 广播到前端（供未来应用内横幅使用；当前依赖系统通知）
-    let _ = app.emit("reminder-fired", serde_json::json!({
-        "task_id": task_id,
-        "offset_seconds": offset,
-        "title": task.title,
-    }));
-
-    if !notifications_on {
-        return;
-    }
-
-    let due_text = task
-        .due_at
-        .as_deref()
-        .and_then(reminders::parse_rfc3339)
-        .map(|due| reminders::remaining_text(due, Utc::now()))
-        .unwrap_or_default();
-
-    let body = if due_text.is_empty() {
-        "该任务需要处理".to_string()
-    } else {
-        format!("「{}」{}后截止", truncate_title(&task.title, 40), due_text)
-    };
-
-    if let Err(e) = app
-        .notification()
-        .builder()
-        .title("CheckIt")
-        .body(body.as_str())
-        .show()
-    {
-        log::error!("发送通知失败: {e}");
-    }
-}
-
-fn truncate_title(title: &str, max_chars: usize) -> String {
-    if title.chars().count() <= max_chars {
-        title.to_string()
-    } else {
-        let truncated: String = title.chars().take(max_chars).collect();
-        format!("{truncated}…")
+        Ok(DeliveryOutcome::Failed { error }) => {
+            log::error!("提醒提交失败，已进入重试状态机: {error}");
+        }
+        Ok(DeliveryOutcome::Skipped) => {
+            log::info!(
+                "提醒静默跳过（通知关闭或超出补发宽限）: task={} offset={}",
+                action.task_id,
+                action.offset_seconds
+            );
+        }
+        Ok(DeliveryOutcome::Cancelled) => {
+            log::info!(
+                "提醒动作已失效并取消: task={} offset={}",
+                action.task_id,
+                action.offset_seconds
+            );
+        }
+        Ok(DeliveryOutcome::Deferred) => {
+            log::debug!(
+                "提醒尚未到期，保留队列: task={} offset={}",
+                action.task_id,
+                action.offset_seconds
+            );
+        }
+        Err(e) => {
+            // 数据库错误：不擅自标记失败，保留 pending 供下一轮崩溃恢复。
+            log::error!("提醒状态更新失败（保留 pending 待下轮恢复）: {e}");
+        }
     }
 }
 
 /// 应用主入口
 pub fn run() {
     tauri::Builder::default()
+        // 产品策略：单实例。必须最先注册，第二实例会在插件 setup 阶段
+        // 转发唤醒请求并退出，不进入应用 setup（数据库迁移/托盘/调度器）。
+        //
+        // 提醒引擎本身不提供跨进程原子领取租约；若绕过此保护启动第二个调度器，
+        // 恢复动作可能被重复提交。因此“支持多实例”不在本版本保证范围内。
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            log::info!("检测到第二实例启动，唤醒已有窗口并退出第二实例");
+            let app = app.clone();
+            // 回调运行在已有实例的主线程：窗口显示/重建必须投递到后台，
+            // 避免同步 WebView2 初始化阻塞主线程。
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = crate::windows::show_widget(&app) {
+                    log::error!("第二实例唤醒已有窗口失败: {e}");
+                }
+            });
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             None,
         ))
         .setup(|app| {
+            // 诊断日志：先于数据库/调度器初始化，确保失败能够落盘并保留 HRESULT。
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                diagnostics::init(&log_dir);
+            }
+
             // 数据库：写入系统应用数据目录
             let data_dir = app.path().app_data_dir()?;
             let db = Database::open(&data_dir.join("checkit.db"))
@@ -147,8 +169,13 @@ pub fn run() {
                 wake: parking_lot::Mutex::new(wake_tx),
             });
 
+            // 开机启动对账（以系统实际状态修正本地记录，不执行系统写入）
+            let settings =
+                settings::reconcile_autostart_on_startup(app.handle(), &db).unwrap_or_else(|e| {
+                    log::warn!("开机启动对账失败，使用本地设置: {e}");
+                    db.load_settings().unwrap_or_default()
+                });
             // 应用启动行为（置顶/玻璃）与窗口几何恢复
-            let settings = db.load_settings().unwrap_or_default();
             windows::apply_window_behaviors(app.handle(), &settings);
             windows::restore_widget_geometry(app.handle());
             windows::setup_widget_events(app.handle());
@@ -170,6 +197,7 @@ pub fn run() {
             commands::update_category,
             commands::delete_category,
             commands::update_settings,
+            commands::toggle_always_on_top,
             commands::check_reminders_now,
             commands::get_db_path,
             commands::open_manager,

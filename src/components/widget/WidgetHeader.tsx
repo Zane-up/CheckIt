@@ -4,10 +4,10 @@
  */
 
 import { CheckSquare, ChevronDown, ChevronUp, MoreHorizontal, PanelTop, Plus } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useState } from "react";
 import { IconButton } from "@/components/ui/Buttons";
 import { t } from "@/i18n/zh";
+import { api } from "@/services/api";
 import MoreMenu from "@/components/widget/MoreMenu";
 
 interface WidgetHeaderProps {
@@ -31,16 +31,15 @@ export default function WidgetHeader({ dateText, onAdd, onToggleCollapse, collap
         </div>
         <div data-tauri-drag-region className="min-w-0 leading-tight">
           <div className="truncate text-[13px] font-semibold tracking-wide">CheckIt</div>
-          <div className="text-[10px] text-[var(--text-muted)]">{dateText}</div>
+          <div className="text-[11.5px] text-[var(--text-secondary)]">{dateText}</div>
         </div>
       </div>
 
       <div className="flex items-center gap-0.5">
         <IconButton
           title={t.widget.alwaysOnTop}
-          onClick={async () => {
-            const win = getCurrentWindow();
-            await win.setAlwaysOnTop(!(await win.isAlwaysOnTop()));
+          onClick={() => {
+            void api.toggleAlwaysOnTop().catch((e) => console.error("切换置顶失败", e));
           }}
         >
           <PanelTop size={15} />
@@ -55,7 +54,7 @@ export default function WidgetHeader({ dateText, onAdd, onToggleCollapse, collap
           type="button"
           title={t.widget.addTask}
           onClick={onAdd}
-          className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-sm transition-all duration-150 hover:bg-[var(--accent-hover)] active:scale-90"
+          className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--btn-primary-bg)] text-[var(--btn-primary-text)] shadow-sm transition-all duration-150 hover:bg-[var(--btn-primary-hover)] hover:shadow-md active:bg-[var(--btn-primary-active)] active:scale-90"
         >
           <Plus size={16} strokeWidth={2.5} />
         </button>

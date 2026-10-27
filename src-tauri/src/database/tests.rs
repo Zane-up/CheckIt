@@ -2,6 +2,7 @@
 
 use crate::database::Database;
 use crate::models::task::{Priority, TaskInput};
+use crate::models::SettingsPatch;
 
 fn db() -> Database {
     let db = Database::open_in_memory().unwrap();
@@ -66,6 +67,47 @@ fn update_task_reflects_changes() {
         .unwrap();
     assert_eq!(updated.title, "改后任务");
     assert_eq!(updated.reminders, vec![1800]);
+}
+
+/// 自定义提醒提前量（非预设秒值）：文件数据库保存后重开，原样保留。
+#[test]
+fn custom_reminder_offsets_roundtrip_file_db() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("custom_reminders.db");
+    {
+        let db = Database::open(&path).unwrap();
+        db.ensure_default_categories().unwrap();
+        let task = db
+            .create_task(&input("自定义提醒", Some("2026-11-01T10:00:00Z"), vec![1500, 3600, 0]))
+            .unwrap();
+        assert_eq!(task.reminders, vec![0, 1500, 3600]);
+    }
+    let db2 = Database::open(&path).unwrap();
+    let tasks = db2.list_tasks().unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].reminders, vec![0, 1500, 3600]);
+}
+
+/// 自定义默认提醒：补丁含重复与越界值时按 normalize 保存，重开后保留。
+#[test]
+fn custom_default_reminder_offsets_persist_across_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings_custom.db");
+    {
+        let db = Database::open(&path).unwrap();
+        db.ensure_default_categories().unwrap();
+        let patch = SettingsPatch {
+            default_reminder_offsets: Some(vec![1500, 3600, 1500, 61 * 86400]),
+            ..Default::default()
+        };
+        let s = db.apply_settings_patch(&patch).unwrap();
+        assert_eq!(s.default_reminder_offsets, vec![1500, 3600]);
+    }
+    let db2 = Database::open(&path).unwrap();
+    assert_eq!(
+        db2.load_settings().unwrap().default_reminder_offsets,
+        vec![1500, 3600]
+    );
 }
 
 #[test]
@@ -156,20 +198,22 @@ fn window_geometry_roundtrip() {
     assert_eq!(geo, (120.0, 88.0, 340.0, 440.0));
 }
 
-/// 重启恢复：文件数据库关闭后重新打开，数据一致（对应验收第 14 条）。
+/// 重启恢复：文件数据库**连接真正关闭（drop）后**重新打开，数据一致。
 #[test]
 fn restart_recovers_data_from_file_db() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("checkit.db");
 
-    // 第一次"运行"
-    let db = Database::open(&path).unwrap();
-    db.ensure_default_categories().unwrap();
-    db.create_task(&input("跨重启任务", Some("2026-11-15T09:00:00Z"), vec![600]))
-        .unwrap();
-    let mut settings = db.load_settings().unwrap();
-    settings.theme = "light".into();
-    db.save_settings(&settings).unwrap();
+    // 第一次"运行"：作用域结束时 db 被 drop，SQLite 连接真正关闭
+    {
+        let db = Database::open(&path).unwrap();
+        db.ensure_default_categories().unwrap();
+        db.create_task(&input("跨重启任务", Some("2026-11-15T09:00:00Z"), vec![600]))
+            .unwrap();
+        let mut settings = db.load_settings().unwrap();
+        settings.theme = "light".into();
+        db.save_settings(&settings).unwrap();
+    }
 
     // 第二次"运行"：全新连接
     let db2 = Database::open(&path).unwrap();
@@ -194,4 +238,355 @@ fn migration_is_idempotent() {
         let db = Database::open(&path).unwrap();
         assert_eq!(db.list_tasks().unwrap().len(), 1);
     }
+}
+
+/// 事务原子性：任务创建中途失败（触发器制造提醒插入错误）→ 整体回滚，不留半成品任务。
+#[test]
+fn create_task_rolls_back_on_midway_failure() {
+    let db = db();
+    // 用触发器模拟第二条提醒写入失败（如磁盘错误/约束冲突）
+    {
+        let conn = db.lock_conn_for_test();
+        conn.execute_batch(
+            "CREATE TRIGGER test_fail_offset_600 BEFORE INSERT ON reminders
+             WHEN NEW.offset_seconds = 600
+             BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;",
+        )
+        .unwrap();
+    }
+
+    let result = db.create_task(&input("半成品任务", Some("2030-01-01T00:00:00Z"), vec![3600, 600]));
+    assert!(result.is_err(), "中途失败必须返回错误");
+
+    // 回滚验证：任务、提醒均不存在
+    let tasks = db.list_tasks().unwrap();
+    assert!(tasks.iter().all(|t| t.title != "半成品任务"), "失败的任务不能落库");
+    {
+        let conn = db.lock_conn_for_test();
+        let reminders: i64 = conn
+            .query_row("SELECT COUNT(*) FROM reminders", [], |r| r.get(0))
+            .unwrap();
+        drop(conn);
+        assert_eq!(reminders, 0, "失败的提醒配置不能落库");
+    }
+}
+
+/// 事务原子性：任务更新中途失败 → 旧标题 / 旧截止 / 旧提醒配置 / 去重记录完整保留。
+#[test]
+fn update_task_rolls_back_preserving_old_state() {
+    let db = db();
+    let due_old = "2030-01-01T00:00:00Z";
+    let task = db
+        .create_task(&input("原标题", Some(due_old), vec![1800]))
+        .unwrap();
+    // 领取一条事件记录（模拟已触发历史）
+    db.claim_reminder(task.id, 1800, due_old, false, chrono::Utc::now())
+        .unwrap();
+
+    {
+        let conn = db.lock_conn_for_test();
+        conn.execute_batch(
+            "CREATE TRIGGER test_fail_update BEFORE INSERT ON reminders
+             WHEN NEW.offset_seconds = 600
+             BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;",
+        )
+        .unwrap();
+    }
+
+    let result = db.update_task(
+        task.id,
+        &input("新标题", Some("2031-06-01T00:00:00Z"), vec![600]),
+    );
+    assert!(result.is_err());
+
+    let after = db.get_task(task.id).unwrap();
+    assert_eq!(after.title, "原标题");
+    assert_eq!(after.due_at.as_deref(), Some(due_old));
+    assert_eq!(after.reminders, vec![1800]);
+    assert!(db.test_event_state(task.id, 1800, due_old).is_some(), "去重记录必须保留");
+}
+
+/// v1 → 当前版本迁移：手工构造 v1 库（含旧版 reminder_events），迁移后数据与去重语义保留。
+#[test]
+fn migrates_v1_database_to_current_preserving_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v1.db");
+
+    // —— 手工构造 v1 结构与数据 ——
+    {
+        let raw = rusqlite::Connection::open(&path).unwrap();
+        raw.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+             CREATE TABLE categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+                color TEXT NOT NULL DEFAULT '#6366f1', sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+             CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+                priority TEXT NOT NULL DEFAULT 'medium',
+                status TEXT NOT NULL DEFAULT 'pending',
+                due_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT);
+             CREATE TABLE reminders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                offset_seconds INTEGER NOT NULL, UNIQUE (task_id, offset_seconds));
+             CREATE TABLE reminder_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL,
+                offset_seconds INTEGER NOT NULL, fired_at TEXT NOT NULL,
+                UNIQUE (task_id, offset_seconds));
+             CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO schema_migrations VALUES (1, '2026-01-01T00:00:00Z');
+             INSERT INTO categories (name, color, sort_order, created_at, updated_at)
+                VALUES ('学习', '#6366f1', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+             INSERT INTO tasks (title, status, due_at, created_at, updated_at)
+                VALUES ('旧任务', 'pending', '2030-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+             INSERT INTO reminders (task_id, offset_seconds) VALUES (1, 3600);
+             INSERT INTO reminder_events (task_id, offset_seconds, fired_at)
+                VALUES (1, 3600, '2026-01-02T00:00:00Z');
+             INSERT INTO app_settings VALUES ('theme', 'light');",
+        )
+        .unwrap();
+    }
+
+    // —— 打开触发 v2、v3 迁移 ——
+    let db = Database::open(&path).unwrap();
+    let state = db.get_app_state().unwrap();
+    assert_eq!(state.tasks.len(), 1);
+    assert_eq!(state.tasks[0].title, "旧任务");
+    assert_eq!(state.tasks[0].reminders, vec![3600]);
+    assert_eq!(state.settings.theme, "light");
+
+    // 旧事件行迁移为 submitted，快照回填当前 due → 引擎不会对同一 (task, offset) 重复触发
+    assert_eq!(
+        db.test_event_state(1, 3600, "2030-01-01T00:00:00Z"),
+        Some(("submitted".into(), 0))
+    );
+    // 引擎语义验证：迁移后的 submitted 行阻止重复触发
+    {
+        let engine = crate::reminders::ReminderEngine::new(db.clone());
+        assert!(
+            engine.run_once(chrono::Utc::now()).unwrap().is_empty(),
+            "迁移后的历史 submitted 事件必须保持去重效果"
+        );
+    }
+    // 新表结构就位
+    let conn = db.lock_conn_for_test();
+    let cols: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('reminder_events')
+             WHERE name IN ('due_at_snapshot','state','attempts','updated_at')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let version: i64 = conn
+        .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
+        .unwrap();
+    drop(conn);
+    assert_eq!(cols, 4, "v2 新列必须全部存在");
+    assert_eq!(version, 3, "必须记录最新迁移版本");
+
+    // 迁移幂等：再次打开不重复迁移
+    drop(db);
+    let db2 = Database::open(&path).unwrap();
+    assert_eq!(db2.list_tasks().unwrap().len(), 1);
+}
+
+/// v2 → v3 迁移：sent → submitted，其余状态 / id / attempts / 时间戳逐行保留。
+#[test]
+fn migrates_v2_events_to_v3_submitted_without_data_loss() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v2.db");
+
+    {
+        let raw = rusqlite::Connection::open(&path).unwrap();
+        raw.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+             CREATE TABLE categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
+                color TEXT NOT NULL DEFAULT '#6366f1', sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+             CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+                priority TEXT NOT NULL DEFAULT 'medium',
+                status TEXT NOT NULL DEFAULT 'pending',
+                due_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT);
+             CREATE TABLE reminders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                offset_seconds INTEGER NOT NULL, UNIQUE (task_id, offset_seconds));
+             CREATE TABLE reminder_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                offset_seconds INTEGER NOT NULL,
+                due_at_snapshot TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (state IN ('pending','sent','failed','skipped','cancelled')),
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (task_id, offset_seconds, due_at_snapshot));
+             CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO schema_migrations VALUES (1, '2026-01-01T00:00:00Z');
+             INSERT INTO schema_migrations VALUES (2, '2026-02-01T00:00:00Z');
+             INSERT INTO tasks (title, due_at, created_at, updated_at)
+                VALUES ('v2 任务', '2030-01-01T00:00:00Z', '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z');
+             INSERT INTO reminder_events
+                (id, task_id, offset_seconds, due_at_snapshot, state, attempts, created_at, updated_at)
+                VALUES
+                (10, 1, 3600, '2030-01-01T00:00:00Z', 'sent',    0, '2026-02-02T00:00:00Z', '2026-02-02T00:00:00Z'),
+                (11, 1, 600,  '2030-01-01T00:00:00Z', 'failed',  2, '2026-02-03T00:00:00Z', '2026-02-03T00:10:00Z'),
+                (12, 1, 0,    '2030-01-01T00:00:00Z', 'pending', 0, '2026-02-04T00:00:00Z', '2026-02-04T00:00:00Z'),
+                (13, 1, 1800, '2030-01-01T00:00:00Z', 'skipped', 1, '2026-02-05T00:00:00Z', '2026-02-05T00:00:00Z'),
+                (14, 1, 7200, '2030-01-01T00:00:00Z', 'cancelled', 0, '2026-02-06T00:00:00Z', '2026-02-06T00:00:00Z');",
+        )
+        .unwrap();
+    }
+
+    let db = Database::open(&path).unwrap();
+    // 通读全部行，确认状态映射与字段均未丢失
+    {
+        let conn = db.lock_conn_for_test();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, offset_seconds, state, attempts, created_at, updated_at
+                 FROM reminder_events ORDER BY id",
+            )
+            .unwrap();
+        let rows: Vec<(i64, i64, String, i64, String, String)> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                (10, 3600, "submitted".into(), 0, "2026-02-02T00:00:00Z".into(), "2026-02-02T00:00:00Z".into()),
+                (11, 600, "failed".into(), 2, "2026-02-03T00:00:00Z".into(), "2026-02-03T00:10:00Z".into()),
+                (12, 0, "pending".into(), 0, "2026-02-04T00:00:00Z".into(), "2026-02-04T00:00:00Z".into()),
+                (13, 1800, "skipped".into(), 1, "2026-02-05T00:00:00Z".into(), "2026-02-05T00:00:00Z".into()),
+                (14, 7200, "cancelled".into(), 0, "2026-02-06T00:00:00Z".into(), "2026-02-06T00:00:00Z".into()),
+            ]
+        );
+
+        // 新 CHECK 约束生效：sent 已不被接受
+        let insert_sent = conn.execute(
+            "INSERT INTO reminder_events
+             (task_id, offset_seconds, due_at_snapshot, state, created_at, updated_at)
+             VALUES (1, 99, '2030-01-01T00:00:00Z', 'sent', 'x', 'x')",
+            [],
+        );
+        assert!(insert_sent.is_err(), "v3 必须拒绝旧状态 sent");
+
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 3);
+    }
+
+    // 迁移幂等
+    drop(db);
+    let db2 = Database::open(&path).unwrap();
+    assert_eq!(db2.list_tasks().unwrap().len(), 1);
+}
+
+/// 设置补丁只覆盖出现的字段，其余字段（含 Vec 配置）原样保留；非法值被夹紧。
+#[test]
+fn settings_patch_preserves_untouched_fields() {
+    use crate::models::SettingsPatch;
+
+    let db = db();
+    let mut base = db.load_settings().unwrap();
+    base.theme = "light".into();
+    base.glass_opacity = 0.42;
+    base.widget_display_count = 11;
+    base.default_reminder_offsets = vec![86400, 600];
+    db.save_settings(&base).unwrap();
+
+    let updated = db
+        .apply_settings_patch(&SettingsPatch {
+            glass_opacity: Some(0.55),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(updated.glass_opacity, 0.55);
+    assert_eq!(updated.theme, "light", "补丁未提供的字段不能回退默认值");
+    assert_eq!(updated.widget_display_count, 11);
+    assert_eq!(updated.default_reminder_offsets, vec![600, 86400]);
+    assert_eq!(updated.always_on_top, base.always_on_top);
+
+    // 非法值夹紧 / 回退
+    let patched = db
+        .apply_settings_patch(&SettingsPatch {
+            theme: Some("blue".into()),
+            glass_opacity: Some(9.0),
+            widget_display_count: Some(1),
+            default_reminder_offsets: Some(vec![-1, 7200, 7200]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(patched.theme, "dark");
+    assert_eq!(patched.glass_opacity, 0.6);
+    assert_eq!(patched.widget_display_count, 3);
+    assert_eq!(patched.default_reminder_offsets, vec![7200]);
+}
+
+/// 并发补丁 + 置顶翻转：两个线程交替操作，字段互不覆盖、无死锁。
+#[test]
+fn concurrent_settings_patch_and_pin_keep_all_fields() {
+    use crate::models::SettingsPatch;
+    use std::sync::Arc;
+
+    let db = Arc::new(db());
+    let mut base = db.load_settings().unwrap();
+    base.theme = "light".into();
+    base.glass_opacity = 0.3;
+    base.widget_display_count = 9;
+    db.save_settings(&base).unwrap();
+    let base_pinned = base.always_on_top;
+
+    let patch_db = db.clone();
+    let patcher = std::thread::spawn(move || {
+        for i in 0..100 {
+            let opacity = 0.3 + (i % 5) as f64 * 0.01;
+            patch_db
+                .apply_settings_patch(&SettingsPatch {
+                    glass_opacity: Some(opacity),
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+    });
+    let pin_db = db.clone();
+    let pinner = std::thread::spawn(move || {
+        for _ in 0..100 {
+            pin_db.toggle_always_on_top().unwrap();
+        }
+    });
+    patcher.join().unwrap();
+    pinner.join().unwrap();
+
+    let final_settings = db.load_settings().unwrap();
+    assert_eq!(final_settings.theme, "light");
+    assert_eq!(final_settings.widget_display_count, 9);
+    assert!((0.3..=0.34).contains(&final_settings.glass_opacity));
+    assert_eq!(
+        final_settings.always_on_top, base_pinned,
+        "偶数次翻转应回到初始值，且不被补丁覆盖"
+    );
 }

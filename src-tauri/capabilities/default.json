@@ -1,12 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "CheckIt 窗口默认能力",
+  "description": "CheckIt 窗口默认能力（最小权限集）",
   "windows": ["widget", "manager"],
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-start-dragging",
     "core:window:allow-set-size",
+    "core:window:allow-set-min-size",
     "core:window:allow-set-position",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-focus",

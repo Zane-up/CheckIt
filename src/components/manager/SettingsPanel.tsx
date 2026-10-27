@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
 import { t } from "@/i18n/zh";
 import type { ThemeMode } from "@/types";
-import { REMINDER_PRESETS } from "@/utils/reminders";
+import { ReminderPicker } from "@/components/ui/ReminderPicker";
 import { api } from "@/services/api";
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -19,7 +19,7 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative h-[20px] w-[36px] shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-        checked ? "bg-[var(--accent)]" : "bg-[var(--surface-active)]"
+        checked ? "bg-[var(--btn-primary-bg)]" : "bg-[var(--surface-active)]"
       }`}
     >
       <span
@@ -35,7 +35,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
     <div className="glass-subtle flex items-center justify-between gap-4 rounded-xl px-4 py-2.5">
       <div className="min-w-0">
         <div className="text-[13px]">{label}</div>
-        {hint && <div className="mt-0.5 text-[11px] leading-snug text-[var(--text-muted)]">{hint}</div>}
+        {hint && <div className="mt-0.5 text-[12px] leading-snug text-[var(--text-muted)]">{hint}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -60,7 +60,7 @@ export default function SettingsPanel() {
       <h1 className="mb-4 text-[15px] font-semibold">{t.settings.title}</h1>
 
       <section className="mb-5">
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">{t.settings.appearance}</h2>
+        <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">{t.settings.appearance}</h2>
         <div className="flex flex-col gap-1.5">
           <Row label={t.settings.theme}>
             <div className="flex gap-1">
@@ -71,7 +71,7 @@ export default function SettingsPanel() {
                   onClick={() => set({ theme: m })}
                   className={`rounded-lg border px-2.5 py-1 text-xs transition-all ${
                     s.theme === m
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]"
                       : "border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
                   }`}
                 >
@@ -98,7 +98,7 @@ export default function SettingsPanel() {
       </section>
 
       <section className="mb-5">
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">{t.settings.behavior}</h2>
+        <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">{t.settings.behavior}</h2>
         <div className="flex flex-col gap-1.5">
           <Row label={t.settings.alwaysOnTop}>
             <Toggle checked={s.always_on_top} onChange={(v) => set({ always_on_top: v })} />
@@ -116,7 +116,7 @@ export default function SettingsPanel() {
       </section>
 
       <section className="mb-5">
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">{t.settings.reminders}</h2>
+        <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">{t.settings.reminders}</h2>
         <div className="flex flex-col gap-1.5">
           <Row label={t.settings.widgetCount}>
             <input
@@ -129,48 +129,28 @@ export default function SettingsPanel() {
             />
           </Row>
           <div className="glass-subtle rounded-xl px-4 py-2.5">
-            <div className="mb-2 text-[13px]">新任务默认提醒</div>
-            <div className="flex flex-wrap gap-1.5">
-              {REMINDER_PRESETS.map(({ offsetSeconds, label }) => {
-                const on = s.default_reminder_offsets.includes(offsetSeconds);
-                return (
-                  <button
-                    key={offsetSeconds}
-                    type="button"
-                    onClick={() =>
-                      set({
-                        default_reminder_offsets: on
-                          ? s.default_reminder_offsets.filter((x) => x !== offsetSeconds)
-                          : [...s.default_reminder_offsets, offsetSeconds].sort((a, b) => a - b),
-                      })
-                    }
-                    className={`rounded-full border px-2.5 py-1 text-[11px] transition-all ${
-                      on
-                        ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
-                        : "border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+            <div className="mb-1 text-[13px]">新任务默认提醒</div>
+            <div className="mb-2 text-[12px] leading-snug text-[var(--text-muted)]">{t.settings.defaultRemindersHint}</div>
+            <ReminderPicker
+              offsets={s.default_reminder_offsets}
+              onChange={(offsets) => set({ default_reminder_offsets: offsets })}
+            />
           </div>
         </div>
       </section>
 
       <section>
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">{t.settings.data}</h2>
+        <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">{t.settings.data}</h2>
         <div className="glass-subtle flex items-center justify-between gap-3 rounded-xl px-4 py-2.5">
           <div className="min-w-0">
             <div className="text-[13px]">{t.settings.dbPath}</div>
-            <div className="selectable mt-0.5 truncate text-[11px] text-[var(--text-muted)]" title={dbPath}>
+            <div className="selectable mt-0.5 truncate text-[12px] text-[var(--text-muted)]" title={dbPath}>
               {dbPath || "…"}
             </div>
           </div>
           <button
             type="button"
-            className="shrink-0 text-xs text-[var(--accent)] hover:underline"
+            className="shrink-0 text-xs text-[var(--accent-text)] hover:underline"
             onClick={() => void api.getDbPath().then((p) => navigator.clipboard.writeText(p))}
           >
             复制路径
@@ -178,7 +158,7 @@ export default function SettingsPanel() {
         </div>
       </section>
 
-      <div className="mt-6 border-t border-[var(--glass-border)] pt-3 text-center text-[11px] text-[var(--text-muted)]">
+      <div className="mt-6 border-t border-[var(--glass-border)] pt-3 text-center text-[12px] text-[var(--text-muted)]">
         CheckIt v{state.settings ? "0.1.0" : ""} · Check it. Get it done.
       </div>
     </div>

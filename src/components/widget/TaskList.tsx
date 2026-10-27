@@ -21,9 +21,9 @@ export default function TaskList({ tasks, displayCount, now }: TaskListProps) {
     <div className="min-h-0 flex-1 overflow-y-auto px-3">
       {shown.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-1.5 py-6 text-center">
-          <Inbox size={26} className="text-[var(--text-muted)]" strokeWidth={1.5} />
+          <Inbox size={26} className="text-[var(--text-secondary)]" strokeWidth={1.5} />
           <div className="text-[13px] text-[var(--text-secondary)]">{t.widget.empty}</div>
-          <div className="text-[11px] text-[var(--text-muted)]">{t.widget.emptyHint}</div>
+          <div className="text-[12px] text-[var(--text-muted)]">{t.widget.emptyHint}</div>
         </div>
       ) : (
         <ul className="flex flex-col gap-1 pb-1">
@@ -33,7 +33,7 @@ export default function TaskList({ tasks, displayCount, now }: TaskListProps) {
         </ul>
       )}
       {tasks.length > shown.length && (
-        <div className="pb-1.5 pt-0.5 text-center text-[10px] text-[var(--text-muted)]">
+        <div className="pb-1.5 pt-0.5 text-center text-[11px] text-[var(--text-secondary)]">
           还有 {tasks.length - shown.length} 个任务
         </div>
       )}

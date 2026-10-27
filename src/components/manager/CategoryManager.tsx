@@ -67,21 +67,21 @@ export default function CategoryManager() {
         </Button>
       </div>
 
-      {error && <div className="mb-3 text-xs text-[var(--urgent)]">{error}</div>}
+      {error && <div className="mb-3 text-[12px] text-[var(--urgent-text)]">{error}</div>}
 
-      <p className="mb-3 text-[11px] text-[var(--text-muted)]">{t.category.deleteHint}</p>
+      <p className="mb-3 text-[12px] text-[var(--text-secondary)]">{t.category.deleteHint}</p>
 
       <ul className="flex flex-col gap-1.5">
         {state.categories.map((c) => (
           <li key={c.id} className="glass-subtle flex items-center gap-3 rounded-xl px-3 py-2">
             <span className="h-3 w-3 rounded-full" style={{ backgroundColor: c.color }} />
             <span className="min-w-0 flex-1 truncate text-[13px]">{c.name}</span>
-            <span className="text-[11px] text-[var(--text-muted)]">
+            <span className="text-[12px] text-[var(--text-secondary)]">
               {state.tasks.filter((task) => task.category_id === c.id && task.status === "pending").length} 项
             </span>
             <button
               type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
               title={t.category.edit}
               onClick={() => startEdit(c.id, c.name, c.color)}
             >
@@ -89,7 +89,7 @@ export default function CategoryManager() {
             </button>
             <button
               type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[rgba(248,113,113,0.12)] hover:text-[var(--urgent)]"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[rgba(248,113,113,0.12)] hover:text-[var(--urgent-text)]"
               title={t.category.delete}
               onClick={() => void remove(c.id)}
             >
@@ -100,8 +100,8 @@ export default function CategoryManager() {
       </ul>
 
       {draft && (
-        <div className="anim-pop glass-panel mt-3 rounded-xl p-3" style={{ backgroundColor: "var(--glass-bg-strong)" }}>
-          <div className="mb-2 text-xs font-medium">{draft.id === null ? t.category.add : t.category.edit}</div>
+        <div className="anim-pop mt-3 rounded-xl border border-[var(--glass-border)] bg-[var(--surface-overlay)] p-3 shadow-xl">
+          <div className="mb-2 text-[12.5px] font-medium">{draft.id === null ? t.category.add : t.category.edit}</div>
           <div className="flex items-center gap-2">
             <input
               className="field-input flex-1"

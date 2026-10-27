@@ -42,6 +42,8 @@ export default function ManagerApp() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
 
+  // 视图过滤/排序按分钟粒度重算（跨日边界正确），不随每秒 tick 重算
+  const nowMinute = Math.floor(now / 60000);
   const visibleTasks = useMemo(() => {
     let tasks: Task[];
     switch (view.kind) {
@@ -74,7 +76,8 @@ export default function ManagerApp() {
       sortKey,
       now,
     );
-  }, [state.tasks, view, filter, sortKey, now]);
+    // eslint 未启用；now 通过 nowMinute 参与依赖
+  }, [state.tasks, view, filter, sortKey, nowMinute]);
 
   const navItems: { key: string; icon: typeof ListTodo; label: string; count?: number; active: boolean; onClick: () => void }[] = [
     {
@@ -129,7 +132,7 @@ export default function ManagerApp() {
   return (
     <div className="glass-panel flex h-full w-full overflow-hidden rounded-none">
       {/* 左侧导航 */}
-      <aside className="flex w-[172px] shrink-0 flex-col border-r border-[var(--glass-border)] bg-[var(--glass-bg-strong)]">
+      <aside className="flex w-[176px] shrink-0 flex-col border-r border-[var(--glass-border)] bg-[var(--surface-overlay)]">
         <div className="flex h-[52px] items-center gap-2 px-4">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] text-white">
             <ListTodo size={15} strokeWidth={2.4} />
@@ -143,16 +146,16 @@ export default function ManagerApp() {
               key={key}
               type="button"
               onClick={onClick}
-              className={`mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+              className={`mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
                 active
-                  ? "bg-[var(--accent-soft)] font-medium text-[var(--accent)]"
+                  ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
               }`}
             >
               <Icon size={14} />
               <span className="min-w-0 flex-1 truncate">{label}</span>
               {count !== undefined && count > 0 && (
-                <span className="rounded-full bg-[var(--surface-active)] px-1.5 text-[10px] tabular-nums text-[var(--text-secondary)]">
+                <span className="rounded-full bg-[var(--surface-active)] px-1.5 text-[11px] tabular-nums text-[var(--text-secondary)]">
                   {count}
                 </span>
               )}
@@ -160,12 +163,12 @@ export default function ManagerApp() {
           ))}
 
           <div className="mb-1 mt-3 flex items-center justify-between px-2.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
               {t.nav.categories}
             </span>
             <button
               type="button"
-              className="text-[10px] text-[var(--accent)] hover:underline"
+              className="text-[11px] text-[var(--accent-text)] hover:underline"
               onClick={() => setView({ kind: "categories" })}
             >
               {t.nav.manageCategories}
@@ -179,16 +182,16 @@ export default function ManagerApp() {
                 key={c.id}
                 type="button"
                 onClick={() => setView({ kind: "category", id: c.id })}
-                className={`mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                className={`mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
                   active
-                    ? "bg-[var(--accent-soft)] font-medium text-[var(--accent)]"
+                    ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]"
                     : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                 }`}
               >
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
                 <span className="min-w-0 flex-1 truncate">{c.name}</span>
                 {count > 0 && (
-                  <span className="text-[10px] tabular-nums text-[var(--text-muted)]">{count}</span>
+                  <span className="text-[11px] tabular-nums text-[var(--text-secondary)]">{count}</span>
                 )}
               </button>
             );
@@ -198,9 +201,9 @@ export default function ManagerApp() {
         <button
           type="button"
           onClick={() => setView({ kind: "settings" })}
-          className={`m-2 flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+          className={`m-2 flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
             view.kind === "settings"
-              ? "bg-[var(--accent-soft)] font-medium text-[var(--accent)]"
+              ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]"
               : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
           }`}
         >

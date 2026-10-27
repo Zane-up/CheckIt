@@ -34,11 +34,11 @@ export function Modal({ open, title, onClose, children, width = 480 }: ModalProp
       }}
     >
       <div
-        className="anim-pop glass-panel flex max-h-full flex-col rounded-2xl"
-        style={{ width, backgroundColor: "var(--glass-bg-strong)" }}
+        className="anim-pop flex max-h-full flex-col rounded-2xl border border-[var(--glass-border)] bg-[var(--surface-overlay)] shadow-2xl"
+        style={{ width }}
       >
         <div className="flex items-center justify-between border-b border-[var(--glass-border)] px-5 py-3">
-          <h2 className="text-sm font-semibold">{title}</h2>
+          <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{title}</h2>
           <IconButton title="关闭" onClick={onClose}>
             <X size={15} />
           </IconButton>

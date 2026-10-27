@@ -6,12 +6,12 @@
 
 ```
 categories 1 ──── N tasks 1 ──── N reminders
-                       1 ──── N reminder_events（触发记录，幂等）
+                       1 ──── N reminder_events（状态机与快照去重）
 app_settings（key-value）
 schema_migrations（版本）
 ```
 
-## 表结构（v1）
+## 表结构（v3）
 
 ### tasks
 
@@ -51,17 +51,26 @@ schema_migrations（版本）
 
 约束：UNIQUE(task_id, offset_seconds)
 
-### reminder_events（提醒触发记录 = 幂等依据）
+### reminder_events（提醒去重 + 状态机，v3）
 
 | 列 | 类型 | 说明 |
 | --- | --- | --- |
 | id | INTEGER PK AUTOINCREMENT | |
-| task_id | INTEGER NOT NULL | 冗余存储，不设外键（允许保留历史） |
+| task_id | INTEGER NOT NULL | 不设外键（保留历史） |
 | offset_seconds | INTEGER NOT NULL | |
-| fired_at | TEXT NOT NULL | 实际记录时间 |
+| due_at_snapshot | TEXT NOT NULL | **领取时任务的截止时间**（快照键组成部分） |
+| state | TEXT CHECK IN ('pending','submitted','failed','skipped','cancelled') | pending=已领取待同步提交；submitted=OS/系统通知 API 已受理（**≠ 用户已看到横幅**）；failed=同步提交返回失败，可重试；skipped=超 15 分钟宽限或通知关闭时静默；cancelled=任务改期/完成/删除或提醒被移除后失效 |
+| attempts | INTEGER NOT NULL DEFAULT 0 | failed 重试计数（上限 3） |
+| created_at / updated_at | TEXT NOT NULL | updated_at 兼作崩溃检测与重试退避依据；submitted/failed 写入**实际提交完成时刻**（pending 超 90s 视为崩溃遗留；failed 从失败完成时刻起 30s 退避） |
 
-约束：UNIQUE(task_id, offset_seconds) —— 同一提醒事件全局最多一条记录。
-INSERT OR IGNORE 的affected 行数即"是否首次触发"。
+约束：UNIQUE(task_id, offset_seconds, due_at_snapshot)。
+- 改期产生新快照键 → 新计划不受旧记录抑制；旧键 pending 动作在提交前二次校验中置 cancelled
+- 该表为 at-least-once：崩溃窗口（OS 已受理但 submitted 尚未落库）恢复后可能重复提交，不承诺 exactly-once
+- v1 旧表迁移（v2）：历史行 state='sent'，snapshot 回填任务当前 due_at（未改期任务去重语义不变）
+- v2→v3：仅将 state='sent' 重命名为 'submitted'，逐行保留 id/attempts/created_at/updated_at 与唯一键；
+  重建表以更新 CHECK 约束，不删除任何事件记录
+
+索引：task_id、state。
 
 ### app_settings（key-value）
 
@@ -76,20 +85,31 @@ INSERT OR IGNORE 的affected 行数即"是否首次触发"。
 | widget_display_count | 3–20 | 8 |
 | launch_at_login | true/false | false |
 | default_reminder_offsets | JSON 数组 | [3600,600] |
-| widget_x/y/w/h | 数字（逻辑像素） | 启动后首次拖动/缩放时写入 |
+| widget_px_x/y/w/h | 数字（物理像素） | 启动后拖动/缩放结束（或关闭窗口）时写入；仅保存展开态尺寸，收起时保留上次展开高度 |
 
 ### schema_migrations
 
 | version | applied_at |
 | --- | --- |
 
-迁移在 `Database::migrate()` 中顺序执行；重复打开时跳过已应用版本（幂等，见测试 `migration_is_idempotent`）。
+迁移在 `Database::migrate()` 中顺序执行 v1→v2→v3；重复打开时跳过已应用版本（幂等，见测试 `migration_is_idempotent`）。
+新建库在一次打开中依次应用全部版本；v1/v2 旧库自动升级且保留数据。
 
 ## 一致性策略
 
-- 多窗口并发：WAL + busy_timeout + 每操作短事务（单语句原子）
+- 多窗口并发：WAL + busy_timeout + 事务
+- **事务边界**：create_task / update_task / save_window_geometry 与设置写入均为显式事务，
+  任一步失败整体回滚（任务不会带半套提醒、设置不会写一半）
+- **设置原子补丁**：`update_settings_atomic` 在同一把连接锁 + 同一事务内完成
+  「读取 → 应用 patch → 校验 → 写回」，`apply_settings_patch` / `toggle_always_on_top` 都走该路径，
+  并发修改不同字段不会互相覆盖，也不存在读锁重入
 - 写路径同步：命令层写库成功后广播 `data-changed`，所有窗口重取
-- 截止时间修改：清除该任务全部 reminder_events，重新调度
-- 完成任务：调度器仅扫描 pending 任务；已触发记录保留
+- 截止时间修改：**不再删除事件记录**——快照键天然区分新旧计划；旧动作在提交前失效
+- 完成任务：调度器仅扫描 pending 任务；旧动作在提交前被取消；已提交记录保留
 - 日期一律 RFC3339 UTC 存储，展示层本地化
 - 全部查询参数绑定；层内校验（空标题、非法时间、非法颜色）
+- 窗口几何以**物理像素**存储（键名带 `_px_` 前缀），跨 DPI 恢复无歧义
+- **单调度器前提**：`recoverable_reminders` 是 SELECT 查询，恢复领取并非跨进程原子操作；
+  产品通过 `tauri-plugin-single-instance` 保证同一时刻只有一个应用进程/调度器。引擎明确不支持
+  多调度器并行，绕过单实例保护可能重复领取并重复提交。本版无新增数据库迁移，schema 仍为 v3；
+  时间戳语义变化（使用提交完成时刻）不改变表结构，不需要迁移

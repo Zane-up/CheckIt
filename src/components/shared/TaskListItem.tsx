@@ -36,7 +36,7 @@ export default function TaskListItem({ task, now, compact = false, onEdit }: Tas
     <li
       className={`group flex items-center gap-2 rounded-xl px-2 transition-colors hover:bg-[var(--surface-hover)] ${
         compact ? "py-1.5" : "py-2"
-      } ${completed ? "opacity-60" : ""}`}
+      }`}
       onDoubleClick={() => onEdit?.(task)}
     >
       {/* 优先级指示条 */}
@@ -59,14 +59,18 @@ export default function TaskListItem({ task, now, compact = false, onEdit }: Tas
             />
           )}
           <span
-            className={`truncate text-[12.5px] leading-snug ${completed ? "line-through decoration-[var(--text-muted)]" : ""}`}
+            className={`truncate text-[13px] leading-snug ${
+              completed
+                ? "text-[var(--text-muted)] line-through decoration-[var(--text-muted)]"
+                : "text-[var(--text-primary)]"
+            }`}
             title={task.title}
           >
             {task.title}
           </span>
         </div>
         {!compact && task.description && (
-          <div className="selectable mt-0.5 truncate text-[11px] text-[var(--text-muted)]" title={task.description}>
+          <div className="selectable mt-0.5 truncate text-[12px] text-[var(--text-muted)]" title={task.description}>
             {task.description}
           </div>
         )}
@@ -75,7 +79,7 @@ export default function TaskListItem({ task, now, compact = false, onEdit }: Tas
       <div className="flex shrink-0 flex-col items-end">
         <CountdownBadge dueAt={task.due_at} now={now} completed={completed} />
         {!compact && task.due_at && (
-          <span className="text-[10px] text-[var(--text-muted)]">{formatDueLocal(task.due_at)}</span>
+          <span className="mt-0.5 whitespace-nowrap text-[11px] text-[var(--text-muted)]">{formatDueLocal(task.due_at)}</span>
         )}
       </div>
     </li>

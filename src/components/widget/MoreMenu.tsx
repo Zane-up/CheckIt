@@ -4,7 +4,6 @@
 
 import { Layers, Pin, Settings, LogOut } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { t } from "@/i18n/zh";
 import { api } from "@/services/api";
 
@@ -30,10 +29,8 @@ export default function MoreMenu({ onClose }: MoreMenuProps) {
     };
   }, [onClose]);
 
-  const togglePin = async () => {
-    const win = getCurrentWindow();
-    const next = !(await win.isAlwaysOnTop());
-    await win.setAlwaysOnTop(next);
+  const togglePin = () => {
+    void api.toggleAlwaysOnTop().catch((e) => console.error("切换置顶失败", e));
   };
 
   const items = [
@@ -45,7 +42,7 @@ export default function MoreMenu({ onClose }: MoreMenuProps) {
     {
       icon: Pin,
       label: t.widget.alwaysOnTop,
-      action: () => void togglePin(),
+      action: togglePin,
     },
     {
       icon: Settings,
@@ -57,8 +54,7 @@ export default function MoreMenu({ onClose }: MoreMenuProps) {
   return (
     <div
       ref={ref}
-      className="anim-pop glass-panel absolute right-2 top-12 z-40 flex w-40 flex-col gap-0.5 rounded-xl p-1.5"
-      style={{ backgroundColor: "var(--glass-bg-strong)" }}
+      className="anim-pop absolute right-2 top-12 z-40 flex w-44 flex-col gap-0.5 rounded-xl border border-[var(--glass-border)] bg-[var(--surface-overlay)] p-1.5 shadow-xl"
     >
       {items.map(({ icon: Icon, label, action }) => (
         <button
@@ -68,7 +64,7 @@ export default function MoreMenu({ onClose }: MoreMenuProps) {
             action();
             onClose();
           }}
-          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-[var(--surface-hover)]"
+          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-hover)]"
         >
           <Icon size={14} className="text-[var(--text-secondary)]" />
           {label}
@@ -78,7 +74,7 @@ export default function MoreMenu({ onClose }: MoreMenuProps) {
       <button
         type="button"
         onClick={() => void api.quitApp()}
-        className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs text-[var(--urgent)] transition-colors hover:bg-[rgba(248,113,113,0.1)]"
+        className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-[var(--urgent-text)] transition-colors hover:bg-[rgba(248,113,113,0.12)]"
       >
         <LogOut size={14} />
         {t.widget.quit}
