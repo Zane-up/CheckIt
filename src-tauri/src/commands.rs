@@ -158,6 +158,58 @@ pub async fn trigger_quick_add(app: AppHandle) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+/// 悬浮窗切换到完整面板模式。
+/// `min_height`：快速添加所需最小逻辑高度（临时抬高，不写回正常几何）。
+#[tauri::command]
+pub async fn widget_expand(app: AppHandle, min_height: Option<f64>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let widget = app
+            .get_webview_window("widget")
+            .ok_or_else(|| "悬浮窗不存在".to_string())?;
+        crate::windows::expand_widget_inner(&app, &widget, min_height)
+            .map(|m| m.as_str().to_string())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 悬浮窗收起为标题栏模式。
+#[tauri::command]
+pub async fn widget_collapse(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let widget = app
+            .get_webview_window("widget")
+            .ok_or_else(|| "悬浮窗不存在".to_string())?;
+        crate::windows::collapse_widget_inner(&app, &widget)
+            .map(|m| m.as_str().to_string())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 快速添加面板关闭：清除临时高度并按需恢复（详见 windows::quick_add_closed_inner）。
+#[tauri::command]
+pub async fn widget_quick_add_closed(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let widget = app
+            .get_webview_window("widget")
+            .ok_or_else(|| "悬浮窗不存在".to_string())?;
+        crate::windows::quick_add_closed_inner(&app, &widget)
+            .map(|mode| mode.as_str().to_string())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 查询悬浮窗当前模式（expanded / collapsed / docked），前端启动时同步界面。
+#[tauri::command]
+pub fn widget_get_mode(app: AppHandle) -> Result<String, String> {
+    Ok(crate::windows::current_mode(&app).as_str().to_string())
+}
+
 /// 真正退出应用进程
 #[tauri::command]
 pub fn quit_app(app: AppHandle) -> Result<(), String> {

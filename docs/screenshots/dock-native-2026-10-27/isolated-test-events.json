@@ -1,0 +1,9 @@
+{
+  "source": "isolated test; only native movement event excerpts",
+  "events": [
+    "[2026-10-27T15:20:50Z] INFO  checkit_lib::windows: 原生拖动结束: start=Rect { x: 1025.0, y: 434.0, w: 510.0, h: 660.0 }, end=Rect { x: 1395.0, y: 443.0, w: 510.0, h: 660.0 }",
+    "[2026-10-27T15:24:50Z] INFO  checkit_lib::windows: 原生拖动结束: start=Rect { x: 12.0, y: 200.0, w: 510.0, h: 660.0 }, end=Rect { x: -4.0, y: 200.0, w: 510.0, h: 660.0 }",
+    "[2026-10-27T15:26:36Z] INFO  checkit_lib::windows: 原生拖动结束: start=Rect { x: 0.0, y: 200.0, w: 510.0, h: 96.0 }, end=Rect { x: 16.0, y: 200.0, w: 510.0, h: 96.0 }",
+    "[2026-10-27T15:27:48Z] INFO  checkit_lib::windows: 原生拖动结束: start=Rect { x: 0.0, y: 218.0, w: 60.0, h: 60.0 }, end=Rect { x: 32.0, y: 218.0, w: 60.0, h: 60.0 }"
+  ]
+}

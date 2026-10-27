@@ -1,156 +1,172 @@
 /**
  * 桌面悬浮小组件（主界面）。
- * 布局：标题栏 / 状态概览 / 任务列表 / 底部进度。
  *
- * 收起/展开：动态调整原生窗口 min-size（收起高度 64 < 默认 minHeight），
- * 展开入口（收起条、快速添加、托盘）全部走 expandWindow() 统一恢复尺寸。
+ * 三种窗口形态，全部由 Rust 侧 `WidgetGeometry` 权威状态驱动（前端不再用 ref 记高度）：
+ * - expanded（完整面板）：正常展开，唯一允许写回"正常几何"的形态
+ * - collapsed（标题栏）：原生窗口 64 逻辑像素高
+ * - docked（贴边圆圈）：原生窗口 40 逻辑像素圆圈
+ *
+ * 约定：
+ * - 尺寸变化一律通过后端命令完成（widget_expand / widget_collapse /
+ *   widget_quick_add_closed），避免前端与 Rust 各自维护一套几何真相。
+ * - 快速添加所需的最小高度作为"临时高度"传给后端，不写回正常展开尺寸。
+ * - 托盘「添加任务」与第二实例唤醒由后端先恢复到完整面板，再发 widget-quick-add。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { LogicalSize } from "@tauri-apps/api/dpi";
-import { ChevronUp } from "lucide-react";
 import { useAppData } from "@/hooks/useAppData";
 import { useNow } from "@/hooks/useNow";
-import { computeStats, sortTasks } from "@/utils/tasks";
-import { t } from "@/i18n/zh";
-import WidgetHeader from "@/components/widget/WidgetHeader";
-import StatsOverview from "@/components/widget/StatsOverview";
-import TaskList from "@/components/widget/TaskList";
-import WidgetFooter from "@/components/widget/WidgetFooter";
-import QuickAddTask from "@/components/widget/QuickAddTask";
+import type { WidgetMode } from "@/services/api";
+import { api } from "@/services/api";
+import WidgetFullPanel, { WidgetCollapsedBar } from "@/components/widget/WidgetPanel";
+import DockBubble from "@/components/widget/DockBubble";
 
-/** 收起态高度（逻辑像素）与展开态默认/最小尺寸 */
-const COLLAPSED_HEIGHT = 64;
-const EXPANDED_MIN_W = 300;
-const EXPANDED_MIN_H = 200;
-const DEFAULT_EXPANDED_H = 440;
+/** 快速添加面板完整可见所需的最小窗口高度（逻辑像素） */
+export const QUICK_ADD_MIN_H = 320;
 
 export default function WidgetApp() {
   const { state } = useAppData();
   const now = useNow();
-  const [collapsed, setCollapsed] = useState(false);
+  const [mode, setMode] = useState<WidgetMode>("expanded");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  /** 展开态高度记忆（收起前的真实高度，用于恢复） */
-  const expandedHeightRef = useRef<number | null>(null);
-  // 缓存窗口对象：getCurrentWindow() 每次返回新包装，若参与回调依赖会导致
-  // 每秒时钟 tick 重新注册托盘快速添加监听器。
-  const win = useMemo(() => getCurrentWindow(), []);
+  const [windowError, setWindowError] = useState<string | null>(null);
+  const modeRef = useRef<WidgetMode>("expanded");
+  const modeVersion = useRef(0);
+  const requestSeq = useRef(0);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const mounted = useRef(true);
 
-  const expandWindow = useCallback(async () => {
-    try {
-      const scale = await win.scaleFactor();
-      const size = await win.innerSize();
-      const width = size.width / scale;
-      const height = size.height / scale;
-      // 记忆当前高度（若处于展开高度才记忆，避免把收起高度存进去）
-      if (height > COLLAPSED_HEIGHT + 8) {
-        expandedHeightRef.current = height;
-      }
-      // 先放宽 min-size 再恢复尺寸（顺序关键：否则尺寸被当前 min 卡住）
-      await win.setMinSize(new LogicalSize(EXPANDED_MIN_W, EXPANDED_MIN_H));
-      const target = expandedHeightRef.current ?? DEFAULT_EXPANDED_H;
-      await win.setSize(new LogicalSize(width, target));
-      setCollapsed(false);
-    } catch (e) {
-      console.error("展开窗口失败", e);
-      setCollapsed(false);
-    }
-  }, [win]);
-
-  const collapseWindow = useCallback(async () => {
-    try {
-      const scale = await win.scaleFactor();
-      const size = await win.innerSize();
-      const width = size.width / scale;
-      const height = size.height / scale;
-      if (height > COLLAPSED_HEIGHT + 8) {
-        expandedHeightRef.current = height;
-      }
-      await win.setMinSize(new LogicalSize(EXPANDED_MIN_W, COLLAPSED_HEIGHT));
-      await win.setSize(new LogicalSize(width, COLLAPSED_HEIGHT));
-      setCollapsed(true);
-    } catch (e) {
-      console.error("收起窗口失败", e);
-      setCollapsed(false);
-    }
-  }, [win]);
-
-  const openQuickAdd = useCallback(() => {
-    setQuickAddOpen(true);
-    // 任何入口（标题栏 + / 托盘"添加任务"）都先确保展开到可用尺寸。
-    // 不依赖 collapsed 状态：即使收起动画/事件与点击交错，也能恢复尺寸。
-    void expandWindow();
-  }, [expandWindow]);
-
-  // 托盘"添加任务"入口：后端通过事件请求悬浮窗打开快速添加。
-  // openQuickAdd 依赖稳定（expandWindow 依赖稳定的 win），时钟 tick 不会重注册。
   useEffect(() => {
-    let unlisten: (() => void) | null = null;
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  const applyMode = useCallback((next: WidgetMode) => {
+    modeVersion.current += 1;
+    modeRef.current = next;
+    setMode(next);
+    if (next !== "expanded") setQuickAddOpen(false);
+  }, []);
+
+  // 同一个 WebView 内按用户操作顺序提交，后端转换锁负责跨入口串行化。
+  const runOperation = useCallback((kind: "expand" | "collapse" | "close", minHeight?: number) => {
+    const seq = ++requestSeq.current;
+    const operation = queue.current.then(async () => {
+      if (!mounted.current) return;
+      const version = modeVersion.current;
+      try {
+        const result = kind === "collapse" ? await api.widgetCollapse()
+          : kind === "close" ? await api.widgetQuickAddClosed()
+          : minHeight === undefined ? await api.widgetExpand() : await api.widgetExpand(minHeight);
+        if (!mounted.current) return;
+        // 较新的后端事件比旧命令响应更权威，不能被异步响应覆盖。
+        if (version === modeVersion.current) applyMode(result);
+        if (seq === requestSeq.current) {
+          setWindowError(null);
+          if (modeRef.current === "expanded") {
+            setQuickAddOpen(kind === "expand" && minHeight !== undefined);
+          }
+        }
+      } catch (e) {
+        console.error("窗口操作失败", e);
+        if (mounted.current && seq === requestSeq.current) {
+          setWindowError("窗口操作失败，请重试，或通过托盘重新打开窗口。");
+          // 不渲染与原生尺寸不符的假面板；关闭失败则保留添加入口供再次关闭重试。
+          if (kind === "close" && modeRef.current === "expanded") setQuickAddOpen(true);
+        }
+      }
+    });
+    queue.current = operation;
+    return operation;
+  }, [applyMode]);
+
+  const expand = useCallback((minHeight?: number) => runOperation("expand", minHeight), [runOperation]);
+  const collapse = useCallback(() => runOperation("collapse"), [runOperation]);
+  const openQuickAdd = useCallback(() => { void expand(QUICK_ADD_MIN_H); }, [expand]);
+  const closeQuickAdd = useCallback(() => {
+    setQuickAddOpen(false);
+    void runOperation("close");
+  }, [runOperation]);
+
+  // 先订阅再取快照；快照返回前的新事件/用户请求会使该快照失效。
+  useEffect(() => {
     let destroyed = false;
-    (async () => {
-      if (typeof window === "undefined") return;
-      const stop = await listen("widget-quick-add", () => openQuickAdd());
-      if (destroyed) stop();
-      else unlisten = stop;
+    let unlisten: (() => void) | undefined;
+    const version = modeVersion.current;
+    const seq = requestSeq.current;
+    void (async () => {
+      try {
+        const stop = await listen<{ mode: WidgetMode }>("widget-mode", (event) => {
+          if (!destroyed && event.payload?.mode) applyMode(event.payload.mode);
+        });
+        if (destroyed) { stop(); return; }
+        unlisten = stop;
+      } catch (e) {
+        console.error("订阅窗口模式失败", e);
+      }
+      if (destroyed) return;
+      try {
+        const result = await api.widgetGetMode();
+        if (!destroyed && version === modeVersion.current && seq === requestSeq.current) applyMode(result);
+      } catch (e) {
+        console.error("读取窗口模式失败", e);
+        if (!destroyed) setWindowError("读取窗口模式失败，请通过托盘重新打开窗口。");
+      }
     })();
-    return () => {
-      destroyed = true;
-      unlisten?.();
-    };
+    return () => { destroyed = true; unlisten?.(); };
+  }, [applyMode]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let destroyed = false;
+    void (async () => {
+      try {
+        const stop = await listen("widget-quick-add", () => { if (!destroyed) openQuickAdd(); });
+        if (destroyed) stop();
+        else unlisten = stop;
+      } catch (e) {
+        console.error("订阅快速添加失败", e);
+      }
+    })();
+    return () => { destroyed = true; unlisten?.(); };
   }, [openQuickAdd]);
 
-  // 排序/统计按分钟粒度重算（跨日/跨分钟边界足够），倒计时显示仍由共享 1Hz 时钟驱动
-  const nowMinute = Math.floor(now / 60000);
-  const pendingSorted = useMemo(
-    () =>
-      sortTasks(
-        state.tasks.filter((task) => task.status === "pending"),
-        "due_asc",
-        now,
-      ),
-    // eslint 未启用；now 仅作显示，排序本身不依赖它
-    [state.tasks, nowMinute],
-  );
-  const stats = useMemo(() => computeStats(state.tasks, now), [state.tasks, nowMinute]);
+  const tasks = useMemo(() => state.tasks, [state.tasks]);
 
-  const today = new Date(now);
-  const dateText = `${today.getMonth() + 1}月${today.getDate()}日 周${"日一二三四五六"[today.getDay()]}`;
+  if (mode === "docked") {
+    return <DockBubble tasks={tasks} onExpand={() => expand()} error={windowError} />;
+  }
+
+  if (mode === "collapsed") {
+    return (
+      <div className="h-full w-full" title={windowError ?? undefined}>
+        <WidgetCollapsedBar
+          now={now}
+          onExpand={() => void expand()}
+          onAdd={openQuickAdd}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="glass-panel flex h-full w-full flex-col overflow-hidden rounded-2xl">
-      <WidgetHeader
-        dateText={dateText}
-        onAdd={openQuickAdd}
-        onToggleCollapse={() => (collapsed ? void expandWindow() : void collapseWindow())}
-        collapsed={collapsed}
-      />
-
-      {!collapsed && (
-        <div className="anim-fade-in flex min-h-0 flex-1 flex-col">
-          <StatsOverview stats={stats} />
-          {quickAddOpen && (
-            <QuickAddTask
-              onClose={() => setQuickAddOpen(false)}
-              defaultOffsets={state.settings.default_reminder_offsets}
-            />
-          )}
-          <TaskList tasks={pendingSorted} displayCount={state.settings.widget_display_count} now={now} />
-          <WidgetFooter stats={stats} />
+    <>
+      {windowError && (
+        <div role="alert" className="fixed inset-x-3 bottom-12 z-50 rounded-lg bg-[var(--surface-overlay)] p-2 text-sm text-[var(--text-primary)] shadow-lg">
+          {windowError}
+          <button type="button" onClick={() => setWindowError(null)} className="ml-2 underline">关闭提示</button>
         </div>
       )}
-
-      {collapsed && (
-        <button
-          type="button"
-          className="hover-surface flex h-6 items-center justify-center text-[var(--text-muted)]"
-          onClick={() => void expandWindow()}
-          title={t.widget.expand}
-        >
-          <ChevronUp size={14} />
-        </button>
-      )}
-    </div>
+      <WidgetFullPanel
+        tasks={tasks}
+        settings={state.settings}
+        now={now}
+        quickAddOpen={quickAddOpen}
+        onAdd={openQuickAdd}
+        onCollapse={() => void collapse()}
+        onCloseQuickAdd={closeQuickAdd}
+      />
+    </>
   );
 }

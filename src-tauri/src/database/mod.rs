@@ -703,6 +703,7 @@ impl Database {
                     }
                 }
                 "launch_at_login" => settings.launch_at_login = value == "true",
+                "edge_dock_enabled" => settings.edge_dock_enabled = value == "true",
                 "default_reminder_offsets" => {
                     if let Ok(v) = serde_json::from_str(&value) {
                         settings.default_reminder_offsets = v
@@ -722,7 +723,7 @@ impl Database {
     /// 写入全部设置键（调用方必须已处于事务中并由其提交/回滚）。
     fn save_settings_inner(conn: &Connection, settings: &AppSettings) -> DbResult<()> {
         let s = settings.clone().sanitized();
-        let entries: [(&str, String); 9] = [
+        let entries: [(&str, String); 10] = [
             ("theme", s.theme.clone()),
             ("glass_enabled", s.glass_enabled.to_string()),
             ("glass_opacity", s.glass_opacity.to_string()),
@@ -731,6 +732,7 @@ impl Database {
             ("notifications_enabled", s.notifications_enabled.to_string()),
             ("widget_display_count", s.widget_display_count.to_string()),
             ("launch_at_login", s.launch_at_login.to_string()),
+            ("edge_dock_enabled", s.edge_dock_enabled.to_string()),
             (
                 "default_reminder_offsets",
                 serde_json::to_string(&s.default_reminder_offsets).unwrap_or_else(|_| "[]".into()),
@@ -784,6 +786,35 @@ impl Database {
     }
 
     // ===== 窗口几何（物理像素存储，跨 DPI 一致）=====
+
+    /// 读取单个设置键的原始字符串值（不存在或读取失败返回 None）。
+    pub fn get_setting_value(&self, key: &str) -> Option<String> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            [key],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+    }
+
+    /// 批量写入任意设置键（单事务；用于窗口模式 / 圆圈锚点等非 AppSettings 字段）。
+    pub fn set_setting_entries(&self, entries: &[(String, String)]) -> DbResult<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        for (key, value) in entries {
+            tx.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                rusqlite::params![key, value],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
 
     /// 读取窗口几何（物理像素；v2 键名带 _px 后缀，与旧逻辑像素键区分）
     pub fn load_window_geometry(&self, prefix: &str) -> Option<(f64, f64, f64, f64)> {

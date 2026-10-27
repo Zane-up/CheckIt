@@ -48,8 +48,20 @@ export const api = {
   /** 显示悬浮窗 */
   showWidget: () => invoke<void>("show_widget"),
 
+  /** 悬浮窗模式：expanded（完整面板）/ collapsed（标题栏）/ docked（贴边圆圈） */
+  widgetGetMode: () => invoke<WidgetMode>("widget_get_mode"),
+  /** 展开为完整面板；minHeight 为快速添加所需最小高度（临时抬高，不写回正常几何） */
+  widgetExpand: (minHeight?: number) =>
+    invoke<WidgetMode>("widget_expand", { minHeight: minHeight ?? null }),
+  /** 收起为标题栏 */
+  widgetCollapse: () => invoke<WidgetMode>("widget_collapse"),
+  /** 快速添加已关闭：清除临时高度并按需恢复 */
+  widgetQuickAddClosed: () => invoke<WidgetMode>("widget_quick_add_closed"),
+
   quitApp: () => invoke<void>("quit_app"),
 };
+
+export type WidgetMode = "expanded" | "collapsed" | "docked";
 
 /** 后端数据变更事件载荷 */
 export interface DataChangedPayload {

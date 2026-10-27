@@ -16,6 +16,14 @@ pub struct AppSettings {
     pub default_reminder_offsets: Vec<i64>,
     pub widget_display_count: i64,
     pub launch_at_login: bool,
+    /// 拖到屏幕边缘时收纳为圆圈（默认开启）
+    #[serde(default = "default_true")]
+    pub edge_dock_enabled: bool,
+}
+
+/// 旧库 / 旧前端载荷缺少该键时默认开启
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -30,6 +38,7 @@ impl Default for AppSettings {
             default_reminder_offsets: vec![3600, 600],
             widget_display_count: 8,
             launch_at_login: false,
+            edge_dock_enabled: true,
         }
     }
 }
@@ -67,6 +76,7 @@ pub struct SettingsPatch {
     pub default_reminder_offsets: Option<Vec<i64>>,
     pub widget_display_count: Option<i64>,
     pub launch_at_login: Option<bool>,
+    pub edge_dock_enabled: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -97,6 +107,9 @@ impl SettingsPatch {
         }
         if let Some(v) = self.launch_at_login {
             s.launch_at_login = v;
+        }
+        if let Some(v) = self.edge_dock_enabled {
+            s.edge_dock_enabled = v;
         }
     }
 }

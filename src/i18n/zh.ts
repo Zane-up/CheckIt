@@ -108,6 +108,8 @@ export const t = {
     alwaysOnTop: "悬浮窗始终置顶",
     closeToTray: "关闭窗口时隐藏到托盘",
     closeToTrayHint: "关闭后 CheckIt 将在后台继续提醒；取消勾选则直接退出程序",
+    edgeDock: "拖到屏幕边缘时收纳",
+    edgeDockHint: "拖到屏幕边缘松手后收纳为小圆圈，单击圆圈恢复面板；关闭后始终保留完整面板",
     launchAtLogin: "开机自动启动",
     notifications: "启用系统通知",
     reminders: "默认提醒",

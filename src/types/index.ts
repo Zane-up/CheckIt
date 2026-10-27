@@ -48,6 +48,8 @@ export interface AppSettings {
   /** 悬浮窗任务列表默认显示条数 */
   widget_display_count: number;
   launch_at_login: boolean;
+  /** 拖到屏幕边缘时收纳为圆圈（默认开启） */
+  edge_dock_enabled: boolean;
 }
 
 export interface WindowGeometry {

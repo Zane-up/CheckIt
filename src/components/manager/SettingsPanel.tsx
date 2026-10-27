@@ -106,6 +106,9 @@ export default function SettingsPanel() {
           <Row label={t.settings.closeToTray} hint={t.settings.closeToTrayHint}>
             <Toggle checked={s.close_to_tray} onChange={(v) => set({ close_to_tray: v })} />
           </Row>
+          <Row label={t.settings.edgeDock} hint={t.settings.edgeDockHint}>
+            <Toggle checked={s.edge_dock_enabled} onChange={(v) => set({ edge_dock_enabled: v })} />
+          </Row>
           <Row label={t.settings.launchAtLogin}>
             <Toggle checked={s.launch_at_login} onChange={(v) => set({ launch_at_login: v })} />
           </Row>

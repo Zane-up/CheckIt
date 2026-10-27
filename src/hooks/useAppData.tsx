@@ -58,6 +58,7 @@ const EMPTY_STATE: AppState = {
     default_reminder_offsets: [3600, 600],
     widget_display_count: 8,
     launch_at_login: false,
+    edge_dock_enabled: true,
   },
 };
 

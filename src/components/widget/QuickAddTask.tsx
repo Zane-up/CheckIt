@@ -5,7 +5,7 @@
  * - 过滤输入法组合中的 Enter（确认候选词不提交）
  */
 
-import { CalendarClock, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
 import { t } from "@/i18n/zh";
@@ -121,23 +121,29 @@ export default function QuickAddTask({ onClose, defaultOffsets }: QuickAddTaskPr
         </button>
       </div>
 
-      <div className="mt-2 flex items-center gap-1.5">
-        <button type="button" className="glass-subtle rounded-lg px-2 py-0.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]" onClick={() => setDueInput(presetToday(now))}>
+      {/* 第二行：快捷日期。窗口最窄 300px 时仍独立成行，不与日期输入抢宽度 */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <button type="button" className="glass-subtle shrink-0 rounded-lg px-2 py-0.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]" onClick={() => setDueInput(presetToday(now))}>
           {t.quickAdd.today}
         </button>
-        <button type="button" className="glass-subtle rounded-lg px-2 py-0.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]" onClick={() => setDueInput(presetTomorrow(now))}>
+        <button type="button" className="glass-subtle shrink-0 rounded-lg px-2 py-0.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]" onClick={() => setDueInput(presetTomorrow(now))}>
           {t.quickAdd.tomorrow}
         </button>
-        <div className="relative flex min-w-0 flex-1 items-center">
-          <CalendarClock size={13} className="pointer-events-none absolute left-2 text-[var(--text-muted)]" />
+      </div>
+
+      {/* 第三行：日期时间独占剩余宽度，添加按钮固定不被挤压。
+          左侧装饰图标已移除：与原生日期选择器功能重复，且会与文字抢 padding。 */}
+      <div className="mt-2 flex items-center gap-2">
+        <div className="min-w-0 flex-1">
           <input
             type="datetime-local"
-            className="field-input !py-0.5 pl-7 text-[12px]"
+            aria-label={t.task.dueAt}
+            className="field-input field-input-compact"
             value={dueInput}
             onChange={(e) => setDueInput(e.target.value)}
           />
         </div>
-        <Button variant="primary" size="sm" disabled={submitting} onClick={() => void save()}>
+        <Button variant="primary" size="sm" className="shrink-0" disabled={submitting} onClick={() => void save()}>
           {t.quickAdd.save}
         </Button>
       </div>

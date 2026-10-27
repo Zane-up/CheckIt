@@ -10,6 +10,36 @@ fn db() -> Database {
     db
 }
 
+#[test]
+fn window_mode_geometry_and_anchor_roll_back_together_on_write_failure() {
+    let db = db();
+    let before = [
+        ("widget_mode".into(), "expanded".into()),
+        ("widget_px_h".into(), "440".into()),
+        ("widget_dock_x".into(), "1880".into()),
+        ("widget_dock_y".into(), "200".into()),
+    ];
+    db.set_setting_entries(&before).unwrap();
+    db.conn
+        .lock()
+        .execute_batch(
+            "CREATE TRIGGER fail_window_commit BEFORE INSERT ON app_settings
+         WHEN NEW.key = 'widget_dock_y' BEGIN SELECT RAISE(ABORT, 'injected disk failure'); END;",
+        )
+        .unwrap();
+    assert!(db
+        .set_setting_entries(&[
+            ("widget_mode".into(), "docked".into()),
+            ("widget_px_h".into(), "520".into()),
+            ("widget_dock_x".into(), "0".into()),
+            ("widget_dock_y".into(), "300".into()),
+        ])
+        .is_err());
+    for (key, value) in before {
+        assert_eq!(db.get_setting_value(&key).unwrap(), value);
+    }
+}
+
 fn input(title: &str, due: Option<&str>, reminders: Vec<i64>) -> TaskInput {
     TaskInput {
         title: title.into(),
@@ -196,6 +226,151 @@ fn window_geometry_roundtrip() {
         .unwrap();
     let geo = db.load_window_geometry("widget").unwrap();
     assert_eq!(geo, (120.0, 88.0, 340.0, 440.0));
+}
+
+// ===== 窗口模式 / 圆圈锚点 / 临时高度持久化 =====
+
+/// 圆圈模式与锚点独立于正常展开几何：写模式不改变 widget_px_* 四键。
+#[test]
+fn dock_mode_does_not_touch_expanded_geometry() {
+    let db = db();
+    db.save_window_geometry("widget", 10.0, 20.0, 340.0, 200.0)
+        .unwrap();
+
+    // 收纳为圆圈：写模式 + 锚点
+    db.set_setting_entries(&[
+        ("widget_mode".to_string(), "docked".to_string()),
+        ("widget_dock_edge".to_string(), "right".to_string()),
+        ("widget_dock_x".to_string(), "1880".to_string()),
+        ("widget_dock_y".to_string(), "480".to_string()),
+    ])
+    .unwrap();
+
+    assert_eq!(
+        db.load_window_geometry("widget"),
+        Some((10.0, 20.0, 340.0, 200.0))
+    );
+    assert_eq!(db.get_setting_value("widget_mode").as_deref(), Some("docked"));
+    assert_eq!(
+        db.get_setting_value("widget_dock_edge").as_deref(),
+        Some("right")
+    );
+    assert_eq!(db.get_setting_value("widget_dock_x").as_deref(), Some("1880"));
+}
+
+/// 旧库没有任何模式键：读取应回退 Expanded（兼容旧数据）。
+#[test]
+fn missing_mode_key_falls_back_to_expanded() {
+    let db = db();
+    assert!(db.get_setting_value("widget_mode").is_none());
+    let mode = db
+        .get_setting_value("widget_mode")
+        .map(|s| crate::dock::WidgetMode::parse(&s))
+        .unwrap_or(crate::dock::WidgetMode::Expanded);
+    assert_eq!(mode, crate::dock::WidgetMode::Expanded);
+}
+
+/// 设置项 edge_dock_enabled：默认开启、可关闭、补丁只改该字段。
+#[test]
+fn edge_dock_setting_defaults_on_and_patch_persists() {
+    let db = db();
+    assert!(db.load_settings().unwrap().edge_dock_enabled);
+
+    // 注意：save_settings_inner 会把"当前结构体全部字段"写回，
+    // 因此 patch 必须应用于**刚从库里读出的完整设置**（与 update_settings 命令一致）。
+    let mut patch = SettingsPatch::default();
+    patch.edge_dock_enabled = Some(false);
+    let mut current = db.load_settings().unwrap();
+    patch.apply_to(&mut current);
+    db.save_settings(&current).unwrap();
+    assert!(!db.load_settings().unwrap().edge_dock_enabled);
+
+    // 后续只改主题的补丁必须保留"关闭"状态
+    let mut patch = SettingsPatch::default();
+    patch.theme = Some("light".into());
+    let mut current = db.load_settings().unwrap();
+    patch.apply_to(&mut current);
+    db.save_settings(&current).unwrap();
+    let reloaded = db.load_settings().unwrap();
+    assert!(!reloaded.edge_dock_enabled, "关闭状态必须被保留");
+    assert_eq!(reloaded.theme, "light");
+}
+
+/// 正常高度 200 → 快速添加临时 320（不写库）→ 保持打开 → 退出重启仍为 200。
+#[test]
+fn temp_quick_add_height_never_overwrites_expanded_height() {
+    use crate::dock::should_persist_expanded;
+    use crate::dock::WidgetMode;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("checkit.db");
+
+    {
+        let db = Database::open(&path).unwrap();
+        db.ensure_default_categories().unwrap();
+        // 用户把窗口缩到 200 高
+        db.save_window_geometry("widget", 100.0, 100.0, 300.0, 200.0)
+            .unwrap();
+
+        // 打开快速添加：窗口临时抬到 320。此时 500ms 防抖保存会触发，
+        // 但 mode=Expanded 且 temp_height=Some(320) → 必须跳过保存
+        let mode = WidgetMode::Expanded;
+        let temp = Some(320.0);
+        assert!(
+            !should_persist_expanded(mode, temp),
+            "临时高度期间不得写回正常几何"
+        );
+
+        // 面板保持打开远超 500ms：故意模拟错误的写入尝试被规则拦下
+        // （这里不直接调用 save_window_geometry，验证的是判定规则）
+        assert_eq!(
+            db.load_window_geometry("widget"),
+            Some((100.0, 100.0, 300.0, 200.0))
+        );
+    }
+
+    // 重启：全新连接读取
+    let db2 = Database::open(&path).unwrap();
+    let (_, _, w, h) = db2.load_window_geometry("widget").unwrap();
+    assert_eq!((w, h), (300.0, 200.0), "重启后正常展开高度仍为 200");
+}
+
+/// 圆圈状态退出重启：正常展开尺寸仍正确，模式为 docked。
+#[test]
+fn docked_restart_keeps_expanded_geometry() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("checkit.db");
+
+    {
+        let db = Database::open(&path).unwrap();
+        db.ensure_default_categories().unwrap();
+        db.save_window_geometry("widget", 50.0, 60.0, 340.0, 440.0)
+            .unwrap();
+        // 收纳：写模式与锚点，不改几何
+        db.set_setting_entries(&[
+            ("widget_mode".to_string(), "docked".to_string()),
+            ("widget_dock_edge".to_string(), "left".to_string()),
+            ("widget_dock_x".to_string(), "0".to_string()),
+            ("widget_dock_y".to_string(), "300".to_string()),
+        ])
+        .unwrap();
+        // 圆圈尺寸（40×40）绝不能被写成正常几何
+        assert_eq!(
+            db.load_window_geometry("widget"),
+            Some((50.0, 60.0, 340.0, 440.0))
+        );
+    }
+
+    let db2 = Database::open(&path).unwrap();
+    assert_eq!(
+        db2.load_window_geometry("widget"),
+        Some((50.0, 60.0, 340.0, 440.0))
+    );
+    assert_eq!(db2.get_setting_value("widget_mode").as_deref(), Some("docked"));
+    assert_eq!(
+        db2.get_setting_value("widget_dock_edge").as_deref(),
+        Some("left")
+    );
 }
 
 /// 重启恢复：文件数据库**连接真正关闭（drop）后**重新打开，数据一致。

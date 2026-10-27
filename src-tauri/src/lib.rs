@@ -3,12 +3,15 @@
 pub mod commands;
 pub mod database;
 pub mod diagnostics;
+pub mod dock;
 pub mod models;
+mod native_drag;
 pub mod notification;
 pub mod reminders;
 pub mod settings;
 pub mod tray;
 pub mod windows;
+mod window_transition;
 
 use std::sync::mpsc;
 use std::time::Duration;
@@ -175,8 +178,9 @@ pub fn run() {
                     log::warn!("开机启动对账失败，使用本地设置: {e}");
                     db.load_settings().unwrap_or_default()
                 });
-            // 应用启动行为（置顶/玻璃）与窗口几何恢复
+            // 应用启动行为（置顶/玻璃）与窗口几何/模式恢复
             windows::apply_window_behaviors(app.handle(), &settings);
+            windows::init_widget_state(app.handle());
             windows::restore_widget_geometry(app.handle());
             windows::setup_widget_events(app.handle());
 
@@ -203,6 +207,10 @@ pub fn run() {
             commands::open_manager,
             commands::show_widget,
             commands::trigger_quick_add,
+            commands::widget_expand,
+            commands::widget_collapse,
+            commands::widget_quick_add_closed,
+            commands::widget_get_mode,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())

@@ -178,6 +178,28 @@ textarea {
   border: 1px solid var(--glass-border);
 }
 
+/* ===== 贴边收纳球 =====
+ * 原生窗口本身就是 40×40 逻辑像素圆圈，圆圈外没有可点击的透明区域。
+ * 数字在深浅主题下都使用主按钮前景色，0/9/99/99+ 均不裁切。 */
+.dock-bubble {
+  -webkit-app-region: no-drag;
+}
+
+.dock-bubble-count {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  /* 99+ 比两位数字更宽：按长度微调字号，保证在 40px 圆圈内不被裁切 */
+  font-variant-numeric: tabular-nums;
+}
+
+.dock-bubble-count[data-len="3"] {
+  font-size: 12px;
+}
+
+.dock-bubble-count[data-len="1"] {
+  font-size: 16px;
+}
+
 /* 悬停浮起效果 */
 .hover-surface {
   transition: background-color 150ms ease;
@@ -247,4 +269,13 @@ textarea {
 }
 .field-input:disabled {
   color: var(--text-disabled);
+}
+
+/* 紧凑输入（悬浮窗快速添加的日期时间）。
+   .field-input 与 Tailwind 工具类分层不同：未分层的 padding 简写会压过
+   @layer utilities 里的 pl-*，因此这里用同层、后声明的组件类显式覆盖，
+   不依赖 !important，也不靠工具类猜最终值。 */
+.field-input-compact {
+  padding: 3px 8px;
+  font-size: 12px;
 }

@@ -26,12 +26,12 @@ export default function WidgetHeader({ dateText, onAdd, onToggleCollapse, collap
       className="relative flex h-[52px] shrink-0 items-center gap-2 px-3"
     >
       <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] shadow-sm">
-          <CheckSquare size={15} className="text-white" strokeWidth={2.4} />
+        <div data-tauri-drag-region className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] shadow-sm">
+          <CheckSquare size={15} className="pointer-events-none text-white" strokeWidth={2.4} />
         </div>
         <div data-tauri-drag-region className="min-w-0 leading-tight">
-          <div className="truncate text-[13px] font-semibold tracking-wide">CheckIt</div>
-          <div className="text-[11.5px] text-[var(--text-secondary)]">{dateText}</div>
+          <div className="pointer-events-none truncate text-[13px] font-semibold tracking-wide">CheckIt</div>
+          <div className="pointer-events-none text-[11.5px] text-[var(--text-secondary)]">{dateText}</div>
         </div>
       </div>
 
