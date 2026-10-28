@@ -8,6 +8,12 @@
 
 ![技术栈](https://img.shields.io/badge/Tauri%202-React%2019-TypeScript-blue) ![平台](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightgrey) ![许可证](https://img.shields.io/badge/License-MIT-green)
 
+## 下载与安装（Windows 用户）
+
+**[直接下载 v0.1.0 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.1.0/CheckIt_0.1.0_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
+
+支持 Windows 10/11 64 位。下载 `.exe` 后双击，按向导安装即可，普通用户无需安装 Node.js、Rust 或开发工具。若从版本页面下载，请展开 **Assets** 并选择 `.exe` 安装包，`Source code` 是开发源码。
+
 ## 功能特性
 
 - **桌面悬浮小组件**：无边框玻璃拟态窗口，可拖动、可缩放、可置顶、可收起，位置与大小自动记忆
@@ -35,9 +41,9 @@
 | 测试 | Vitest（前端） + Rust 内置测试（后端） |
 | CI | GitHub Actions |
 
-## 环境要求
+## 开发环境要求
 
-开发与运行 CheckIt 需要：
+仅在从源码开发或构建 CheckIt 时需要：
 
 1. **Node.js** ≥ 22.12（Vite 8 / Vitest 5 的最低要求，推荐 22 LTS）
 2. **Rust** stable（MSVC 工具链）—— 通过 [rustup](https://rustup.rs) 安装
