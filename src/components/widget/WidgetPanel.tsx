@@ -12,13 +12,15 @@ import WidgetHeader from "@/components/widget/WidgetHeader";
 import StatsOverview from "@/components/widget/StatsOverview";
 import TaskList from "@/components/widget/TaskList";
 import WidgetFooter from "@/components/widget/WidgetFooter";
-import QuickAddTask from "@/components/widget/QuickAddTask";
+import QuickAddTask, { type QuickAddDraft } from "@/components/widget/QuickAddTask";
 
 export interface FullPanelProps {
   tasks: Task[];
   settings: AppSettings;
   now: number;
   quickAddOpen: boolean;
+  quickAddDraft: QuickAddDraft;
+  onDraftChange: (draft: QuickAddDraft) => void;
   onAdd: () => void;
   onCollapse: () => void;
   onCloseQuickAdd: () => void;
@@ -30,18 +32,18 @@ export function WidgetFullPanel({
   settings,
   now,
   quickAddOpen,
+  quickAddDraft,
+  onDraftChange,
   onAdd,
   onCollapse,
   onCloseQuickAdd,
 }: FullPanelProps) {
-  // 排序/统计按分钟粒度重算（跨日/跨分钟边界足够），倒计时显示仍由共享 1Hz 时钟驱动
-  const nowMinute = Math.floor(now / 60000);
+  // 排序只依赖任务；统计随共享时钟更新，保证截止秒数与倒计时一致。
   const pendingSorted = useMemo(
-    () => sortTasks(tasks.filter((task) => task.status === "pending"), "due_asc", now),
-    // eslint 未启用；now 仅作显示，排序本身不依赖它
-    [tasks, nowMinute],
+    () => sortTasks(tasks.filter((task) => task.status === "pending"), "due_asc", 0),
+    [tasks],
   );
-  const stats = useMemo(() => computeStats(tasks, now), [tasks, nowMinute]);
+  const stats = useMemo(() => computeStats(tasks, now), [tasks, now]);
 
   const today = new Date(now);
   const dateText = `${today.getMonth() + 1}月${today.getDate()}日 周${"日一二三四五六"[today.getDay()]}`;
@@ -53,7 +55,12 @@ export function WidgetFullPanel({
       <div className="anim-fade-in flex min-h-0 flex-1 flex-col">
         <StatsOverview stats={stats} />
         {quickAddOpen && (
-          <QuickAddTask onClose={onCloseQuickAdd} defaultOffsets={settings.default_reminder_offsets} />
+          <QuickAddTask
+            onClose={onCloseQuickAdd}
+            defaultOffsets={settings.default_reminder_offsets}
+            draft={quickAddDraft}
+            onDraftChange={onDraftChange}
+          />
         )}
         <TaskList tasks={pendingSorted} displayCount={settings.widget_display_count} now={now} />
         <WidgetFooter stats={stats} />

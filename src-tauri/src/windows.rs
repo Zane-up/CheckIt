@@ -13,6 +13,7 @@
 //! - `expanded`：最后一次**正常展开**的位置与尺寸（物理像素），是唯一写回数据库
 //!   `widget_px_*` 的几何；64（收起）、40（圆圈）、快速添加临时抬高（≥320）都不覆盖它。
 //! - `temp_height`：快速添加临时抬高的逻辑高度；生效期间跳过几何保存与吸附判定。
+//! - `quick_add_open`：编辑期间禁止自动收纳，不依赖是否需要临时抬高。
 //! - `dock`：圆圈所在边缘与锚点（物理像素），持久化为 `widget_mode`/`widget_dock_*`。
 //!
 //! Windows 原生移动会话由 native_drag 的窗口子类回调采样，WM_EXITSIZEMOVE 后
@@ -27,8 +28,8 @@ use tauri::{
 };
 
 use crate::dock::{
-    clamp_into_work_area, dock_anchor, expanded_position_from_dock, intersects, nearest_edge,
-    select_edge, should_persist_expanded, Edge, Rect, WidgetGeometryState, WidgetMode,
+    clamp_into_work_area, dock_anchor, expanded_position_from_dock, expanded_rect_from_collapsed,
+    intersects, nearest_edge, select_edge, should_persist_expanded, Edge, Rect, WidgetGeometryState, WidgetMode,
     CLICK_DISPLACEMENT, COLLAPSED_HEIGHT, DOCK_BUBBLE_SIZE, EDGE_DOCK_THRESHOLD,
 };
 use crate::models::AppSettings;
@@ -358,7 +359,7 @@ fn handle_drag_end(app: &AppHandle, drag: CompletedDrag) {
     match st.mode {
         WidgetMode::Expanded | WidgetMode::Collapsed => {
             // 原生 WM_SIZING 已排除手动缩放；DPI 导致的尺寸变化不能误排除真实拖动。
-            if st.temp_height.is_some() || moved <= 0.5 {
+            if !st.allows_edge_dock() || moved <= 0.5 {
                 return;
             }
             let enabled = app
@@ -423,6 +424,7 @@ fn dock_to(
         mode: WidgetMode::Docked,
         expanded: Some(expanded_before_dock(&geom.0.lock(), *cur, scale)),
         temp_height: None,
+        quick_add_open: false,
         dock: Some((edge, x, y)),
     };
     commit_layout(
@@ -679,6 +681,7 @@ fn restore_widget_geometry_inner(app: &AppHandle) -> tauri::Result<()> {
         mode,
         expanded: Some(normal),
         temp_height: None,
+        quick_add_open: false,
         dock: None,
     };
     let mut target = Layout {
@@ -769,20 +772,14 @@ fn expand_widget_locked(
     let normal_w_logical = (normal.w / scale).clamp(EXPANDED_MIN_W, 700.0);
     let normal_h_logical = (normal.h / scale).clamp(EXPANDED_MIN_H, EXPANDED_MAX_H);
 
-    // 快速添加临时高度：只在需要时抬高，且不写回正常高度
-    let mut temp_height = None;
-    let mut target_h = normal_h_logical;
-    if let Some(mh) = min_h {
-        if mh > target_h + 0.5 {
-            temp_height = Some(mh);
-            target_h = mh;
-        }
-    }
+    // 编辑状态与临时高度分别记录：正常高度足够时同样禁止自动收纳。
+    let mut next = st.clone();
+    let target_h = next.configure_quick_add(normal_h_logical, min_h);
 
     // 位置：
     // - 从圆圈：向工作区内部展开（以圆心为参照）
     // - 已展开：保持当前左上角（用户可能刚拖动过）
-    // - 从标题栏展开：横向沿用正常展开位置、纵向沿用收起条当前顶边；
+    // - 从标题栏展开：沿用收起条当前左上角；
     //   再整体夹回工作区，保证展开后完整可见。
     let cur = widget_rect(widget).unwrap_or_else(default_rect);
     let (w_logical, position) = if st.mode == WidgetMode::Docked {
@@ -801,7 +798,7 @@ fn expand_widget_locked(
     } else if st.mode == WidgetMode::Collapsed {
         // 收起条可能被横向拖动/缩放：宽度沿用当前宽度，避免展开后横向跳变
         let cur_w = (cur.w / scale).clamp(EXPANDED_MIN_W, 700.0);
-        let anchor = (expanded.map(|r| r.x).unwrap_or(cur.x), cur.y);
+        let anchor = (cur.x, cur.y);
         let pos = work_area_for(
             widget,
             (
@@ -810,8 +807,9 @@ fn expand_widget_locked(
             ),
         )
         .map(|(wa, _)| {
-            clamp_into_work_area(
-                &Rect::new(anchor.0, anchor.1, cur_w * scale, target_h * scale),
+            expanded_rect_from_collapsed(
+                Rect::new(cur.x, cur.y, cur_w * scale, cur.h),
+                target_h * scale,
                 &wa,
             )
             .x_y()
@@ -828,16 +826,14 @@ fn expand_widget_locked(
         w_logical * scale,
         normal_h_logical * scale,
     );
+    next.mode = WidgetMode::Expanded;
+    next.expanded = Some(persisted);
+    next.dock = None;
     commit_layout(
         app,
         widget,
         &geom,
-        WidgetGeometryState {
-            mode: WidgetMode::Expanded,
-            expanded: Some(persisted),
-            temp_height,
-            dock: None,
-        },
+        next,
         Layout {
             min: mode_min(WidgetMode::Expanded),
             size: (w_logical, target_h),
@@ -870,6 +866,7 @@ pub fn collapse_widget_inner(app: &AppHandle, widget: &WebviewWindow) -> tauri::
     }
     next.mode = WidgetMode::Collapsed;
     next.temp_height = None;
+    next.quick_add_open = false;
     next.dock = None;
     commit_layout(
         app,
@@ -904,12 +901,15 @@ pub fn quick_add_closed_inner(
     if next.mode != WidgetMode::Expanded {
         return Ok(next.mode);
     }
-    let Some(temp) = next.temp_height else {
+    if !next.quick_add_open && next.temp_height.is_none() {
         return Ok(next.mode);
-    };
+    }
     let cur = widget_rect(widget).ok_or_else(|| window_error("无法读取窗口几何"))?;
     let scale = widget.scale_factor()?;
-    let height = if (cur.h - temp * scale).abs() <= 2.0 * scale {
+    let height = if next
+        .temp_height
+        .is_some_and(|temp| (cur.h - temp * scale).abs() <= 2.0 * scale)
+    {
         next.expanded
             .map(|r| (r.h / scale).clamp(EXPANDED_MIN_H, EXPANDED_MAX_H))
             .unwrap_or(DEFAULT_HEIGHT)
@@ -917,7 +917,7 @@ pub fn quick_add_closed_inner(
         (cur.h / scale).clamp(EXPANDED_MIN_H, EXPANDED_MAX_H)
     };
     let width = (cur.w / scale).clamp(EXPANDED_MIN_W, 700.0);
-    next.temp_height = None;
+    next.configure_quick_add(height, None);
     next.expanded = Some(Rect::new(cur.x, cur.y, width * scale, height * scale));
     commit_layout(
         app,
@@ -1151,7 +1151,7 @@ mod tests {
         let state = WidgetGeometryState {
             mode: WidgetMode::Collapsed,
             expanded: Some(Rect::new(100.0, 200.0, 510.0, 660.0)),
-            temp_height: None, dock: None,
+            temp_height: None, quick_add_open: false, dock: None,
         };
         let normal = expanded_before_dock(&state, Rect::new(0.0, 300.0, 450.0, 96.0), 1.5);
         assert_eq!(normal, Rect::new(0.0, 300.0, 450.0, 660.0));

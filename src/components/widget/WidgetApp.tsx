@@ -21,6 +21,7 @@ import type { WidgetMode } from "@/services/api";
 import { api } from "@/services/api";
 import WidgetFullPanel, { WidgetCollapsedBar } from "@/components/widget/WidgetPanel";
 import DockBubble from "@/components/widget/DockBubble";
+import type { QuickAddDraft } from "@/components/widget/QuickAddTask";
 
 /** 快速添加面板完整可见所需的最小窗口高度（逻辑像素） */
 export const QUICK_ADD_MIN_H = 320;
@@ -30,6 +31,7 @@ export default function WidgetApp() {
   const now = useNow();
   const [mode, setMode] = useState<WidgetMode>("expanded");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddDraft, setQuickAddDraft] = useState<QuickAddDraft>({ title: "", dueInput: "" });
   const [windowError, setWindowError] = useState<string | null>(null);
   const modeRef = useRef<WidgetMode>("expanded");
   const modeVersion = useRef(0);
@@ -163,6 +165,8 @@ export default function WidgetApp() {
         settings={state.settings}
         now={now}
         quickAddOpen={quickAddOpen}
+        quickAddDraft={quickAddDraft}
+        onDraftChange={setQuickAddDraft}
         onAdd={openQuickAdd}
         onCollapse={() => void collapse()}
         onCloseQuickAdd={closeQuickAdd}

@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
     }),
     clock: { now: new Date(2026, 9, 26, 12, 0).getTime() },
     tasks: [] as Array<Record<string, unknown>>,
+    createTask: vi.fn(async () => {}),
   };
 });
 
@@ -66,7 +67,7 @@ vi.mock("@/hooks/useAppData", () => ({
         edge_dock_enabled: true,
       },
     },
-    createTask: vi.fn(async () => {}),
+    createTask: mocks.createTask,
     setTaskStatus: vi.fn(async () => {}),
   }),
 }));
@@ -99,6 +100,7 @@ beforeEach(() => {
   mocks.setMode("expanded");
   mocks.clock.now = new Date(2026, 9, 26, 12, 0).getTime();
   mocks.tasks = [];
+  mocks.createTask.mockClear();
   apiMocks.widgetGetMode.mockClear();
   apiMocks.widgetExpand.mockClear();
   apiMocks.widgetCollapse.mockClear();
@@ -159,6 +161,50 @@ describe("WidgetApp 窗口模式与快速添加", () => {
     });
     await waitFor(() => expect(apiMocks.widgetExpand).toHaveBeenCalledWith(320));
     expect(screen.getByPlaceholderText(t.quickAdd.placeholder)).toBeTruthy();
+  });
+
+  it("快速添加草稿跨收纳和收起保留，重新打开时标题与日期不丢失", async () => {
+    render(<WidgetApp />);
+    await waitFor(() => expect(registrations("widget-mode")).toBe(1));
+    fireEvent.click(screen.getByTitle(t.widget.addTask));
+    const title = await screen.findByPlaceholderText(t.quickAdd.placeholder);
+    fireEvent.change(title, { target: { value: "尚未保存的草稿" } });
+    fireEvent.change(screen.getByLabelText(t.task.dueAt), { target: { value: "2026-10-29T09:30" } });
+
+    for (const mode of ["docked", "collapsed"]) {
+      await act(async () => { mocks.handlers.get("widget-mode")!({ payload: { mode } }); });
+      expect(screen.queryByPlaceholderText(t.quickAdd.placeholder)).toBeNull();
+      await act(async () => { mocks.handlers.get("widget-mode")!({ payload: { mode: "expanded" } }); });
+      fireEvent.click(screen.getByTitle(t.widget.addTask));
+      expect((await screen.findByPlaceholderText(t.quickAdd.placeholder) as HTMLInputElement).value).toBe("尚未保存的草稿");
+      expect((screen.getByLabelText(t.task.dueAt) as HTMLInputElement).value).toBe("2026-10-29T09:30");
+    }
+  });
+
+  it("保存成功后清空草稿，下次快速添加不会重复带入已保存内容", async () => {
+    render(<WidgetApp />);
+    fireEvent.click(screen.getByTitle(t.widget.addTask));
+    fireEvent.change(await screen.findByPlaceholderText(t.quickAdd.placeholder), { target: { value: "只保存一次" } });
+    fireEvent.change(screen.getByLabelText(t.task.dueAt), { target: { value: "2026-10-29T09:30" } });
+    fireEvent.click(screen.getByRole("button", { name: t.quickAdd.save }));
+    await waitFor(() => expect(screen.queryByPlaceholderText(t.quickAdd.placeholder)).toBeNull());
+    expect(mocks.createTask).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTitle(t.widget.addTask));
+    expect((await screen.findByPlaceholderText(t.quickAdd.placeholder) as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText(t.task.dueAt) as HTMLInputElement).value).toBe("");
+  });
+
+  it("同一分钟跨过截止秒数时，逾期统计随倒计时一起更新", async () => {
+    const start = new Date(2026, 9, 28, 12, 0, 1).getTime();
+    mocks.clock.now = start;
+    mocks.tasks = [{ ...pendingTask(1), due_at: new Date(start + 9000).toISOString() }];
+    const { rerender } = render(<WidgetApp />);
+    const overdueValue = () => screen.getByText(t.widget.stats.overdue).previousElementSibling?.textContent;
+    expect(overdueValue()).toBe("0");
+    mocks.clock.now = start + 10000;
+    rerender(<WidgetApp />);
+    expect(overdueValue()).toBe("1");
+    expect(screen.getByText("逾期 1秒")).toBeTruthy();
   });
 
   it("圆圈模式：单击展开完整面板", async () => {
@@ -383,11 +429,26 @@ describe("WidgetApp 窗口模式与快速添加", () => {
     render(<WidgetApp />);
     fireEvent.click(screen.getByTitle(t.widget.addTask));
     await screen.findByPlaceholderText(t.quickAdd.placeholder);
+    fireEvent.change(screen.getByPlaceholderText(t.quickAdd.placeholder), { target: { value: "关闭失败仍保留" } });
     fireEvent.click(screen.getByTitle(t.task.cancel));
     await screen.findByRole("alert");
     expect(screen.getByPlaceholderText(t.quickAdd.placeholder)).toBeTruthy();
+    expect((screen.getByPlaceholderText(t.quickAdd.placeholder) as HTMLInputElement).value).toBe("关闭失败仍保留");
     fireEvent.click(screen.getByTitle(t.task.cancel));
     await waitFor(() => expect(screen.queryByPlaceholderText(t.quickAdd.placeholder)).toBeNull());
     expect(apiMocks.widgetQuickAddClosed).toHaveBeenCalledTimes(2);
+  });
+
+  it("任务保存失败后关闭并重开，仍保留可重试的草稿", async () => {
+    mocks.createTask.mockRejectedValueOnce(new Error("test save failure"));
+    render(<WidgetApp />);
+    fireEvent.click(screen.getByTitle(t.widget.addTask));
+    fireEvent.change(await screen.findByPlaceholderText(t.quickAdd.placeholder), { target: { value: "保存失败仍保留" } });
+    fireEvent.click(screen.getByRole("button", { name: t.quickAdd.save }));
+    await screen.findByText("test save failure");
+    fireEvent.click(screen.getByTitle(t.task.cancel));
+    await waitFor(() => expect(screen.queryByPlaceholderText(t.quickAdd.placeholder)).toBeNull());
+    fireEvent.click(screen.getByTitle(t.widget.addTask));
+    expect((await screen.findByPlaceholderText(t.quickAdd.placeholder) as HTMLInputElement).value).toBe("保存失败仍保留");
   });
 });

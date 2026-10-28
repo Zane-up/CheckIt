@@ -16,9 +16,16 @@ import {
 } from "@/utils/time";
 import { Button } from "@/components/ui/Buttons";
 
+export interface QuickAddDraft {
+  title: string;
+  dueInput: string;
+}
+
 interface QuickAddTaskProps {
   onClose: () => void;
   defaultOffsets: number[];
+  draft: QuickAddDraft;
+  onDraftChange: (draft: QuickAddDraft) => void;
 }
 
 function toLocalInput(ts: number): string {
@@ -39,10 +46,11 @@ function presetTomorrow(now: number): string {
   return toLocalInput(calendarTomorrowAt(now, 9, 0));
 }
 
-export default function QuickAddTask({ onClose, defaultOffsets }: QuickAddTaskProps) {
+export default function QuickAddTask({ onClose, defaultOffsets, draft, onDraftChange }: QuickAddTaskProps) {
   const { createTask } = useAppData();
-  const [title, setTitle] = useState("");
-  const [dueInput, setDueInput] = useState("");
+  // 草稿由 WidgetApp 持有，切换圆圈/收起模式卸载此组件时仍保留。
+  const { title, dueInput } = draft;
+  const setDueInput = (value: string) => onDraftChange({ ...draft, dueInput: value });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
@@ -71,8 +79,7 @@ export default function QuickAddTask({ onClose, defaultOffsets }: QuickAddTaskPr
         due_at: localInputToUtcIso(dueInput),
         reminders: dueInput ? defaultOffsets : [],
       });
-      setTitle("");
-      setDueInput("");
+      onDraftChange({ title: "", dueInput: "" });
       setError(null);
       onClose();
     } catch (e) {
@@ -106,7 +113,7 @@ export default function QuickAddTask({ onClose, defaultOffsets }: QuickAddTaskPr
           value={title}
           maxLength={200}
           onChange={(e) => {
-            setTitle(e.target.value);
+            onDraftChange({ ...draft, title: e.target.value });
             setError(null);
           }}
           onKeyDown={onKeyDown}

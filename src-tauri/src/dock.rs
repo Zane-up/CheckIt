@@ -123,12 +123,15 @@ impl Rect {
 /// 2. `temp_height` 为 Some 时表示窗口当前停在快速添加临时高度，
 ///    期间几何保存与吸附判定全部跳过。
 /// 3. `dock` 记录圆圈所在边缘与锚点，供重启恢复与 DPI 变化后重贴边。
+/// 4. `quick_add_open` 独立于临时高度；编辑期间即使无需抬高也不自动收纳。
 #[derive(Debug, Clone)]
 pub struct WidgetGeometryState {
     pub mode: WidgetMode,
     pub expanded: Option<Rect>,
     /// 快速添加临时抬高的逻辑高度（当前生效时为 Some）
     pub temp_height: Option<f64>,
+    /// 仅内存中的编辑状态，不持久化草稿或改变数据库 schema。
+    pub quick_add_open: bool,
     /// 圆圈锚点：边缘 + 物理坐标
     pub dock: Option<(Edge, f64, f64)>,
 }
@@ -139,8 +142,24 @@ impl Default for WidgetGeometryState {
             mode: WidgetMode::Expanded,
             expanded: None,
             temp_height: None,
+            quick_add_open: false,
             dock: None,
         }
+    }
+}
+
+impl WidgetGeometryState {
+    /// 打开/关闭快速添加与临时高度分开记录；返回这次展开需要的逻辑高度。
+    pub fn configure_quick_add(&mut self, normal_height: f64, min_height: Option<f64>) -> f64 {
+        self.quick_add_open = min_height.is_some();
+        self.temp_height = min_height.filter(|height| *height > normal_height + 0.5);
+        self.temp_height.unwrap_or(normal_height)
+    }
+
+    pub fn allows_edge_dock(&self) -> bool {
+        matches!(self.mode, WidgetMode::Expanded | WidgetMode::Collapsed)
+            && !self.quick_add_open
+            && self.temp_height.is_none()
     }
 }
 
@@ -244,6 +263,11 @@ pub fn clamp_into_work_area(rect: &Rect, wa: &Rect) -> Rect {
     Rect::new(x, y, rect.w, rect.h)
 }
 
+/// 收起条展开后沿用当前左上角与宽度，只恢复正常高度，再夹回可见工作区。
+pub fn expanded_rect_from_collapsed(current: Rect, expanded_height: f64, wa: &Rect) -> Rect {
+    clamp_into_work_area(&Rect::new(current.x, current.y, current.w, expanded_height), wa)
+}
+
 /// 矩形是否与工作区有实际重叠（用于恢复位置可见性校验）。
 pub fn intersects(rect: &Rect, wa: &Rect) -> bool {
     rect.x < wa.right() && rect.right() > wa.x && rect.y < wa.bottom() && rect.bottom() > wa.y
@@ -298,6 +322,46 @@ pub fn drag_step(button_down_at_start: bool, button_down_now: bool) -> DragOutco
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quick_add_blocks_docking_with_or_without_temporary_growth() {
+        for normal_height in [200.0, 320.0, 440.0, 900.0] {
+            let normal = Rect::new(300.0, 200.0, 340.0, normal_height);
+            let mut state = WidgetGeometryState {
+                expanded: Some(normal),
+                ..WidgetGeometryState::default()
+            };
+            assert!(state.allows_edge_dock());
+            let actual_height = state.configure_quick_add(normal_height, Some(320.0));
+            assert_eq!(actual_height, normal_height.max(320.0));
+            assert!(!state.allows_edge_dock(), "编辑期间禁止收纳，正常高度={normal_height}");
+            assert_eq!(state.expanded, Some(normal), "临时高度不能覆盖正常几何");
+            state.configure_quick_add(normal_height, None);
+            assert!(state.allows_edge_dock(), "关闭编辑后恢复收纳");
+            assert_eq!(state.expanded, Some(normal));
+        }
+    }
+
+    #[test]
+    fn expanding_moved_collapsed_bar_keeps_current_position_at_each_scale() {
+        for scale in [1.0, 1.25, 1.5] {
+            let wa = Rect::new(-1920.0 * scale, 0.0, 1920.0 * scale, 1040.0 * scale);
+            // 正常面板曾在 x=-1600；收起后移到了 x=-1000，并调整了宽度。
+            let current = Rect::new(-1000.0 * scale, 100.0 * scale, 400.0 * scale, 64.0 * scale);
+            let result = expanded_rect_from_collapsed(current, 440.0 * scale, &wa);
+            assert_eq!(result, Rect::new(current.x, current.y, current.w, 440.0 * scale));
+        }
+    }
+
+    #[test]
+    fn expanding_collapsed_bar_only_clamps_when_full_panel_would_leave_work_area() {
+        let wa = Rect::new(0.0, 0.0, 1920.0, 1040.0);
+        let current = Rect::new(1700.0, 900.0, 340.0, 64.0);
+        assert_eq!(
+            expanded_rect_from_collapsed(current, 440.0, &wa),
+            Rect::new(1580.0, 600.0, 340.0, 440.0),
+        );
+    }
 
     /// 1920×1080 工作区（物理像素，scale=1 时阈值 12）
     fn wa() -> Rect {
