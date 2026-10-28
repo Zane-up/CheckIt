@@ -44,7 +44,7 @@ const EXPANDED_MIN_W: f64 = 300.0;
 const EXPANDED_MIN_H: f64 = 200.0;
 const DEFAULT_WIDTH: f64 = 340.0;
 const DEFAULT_HEIGHT: f64 = 440.0;
-/// 展开高度恢复上限（与既有逻辑一致）
+/// 快速添加临时高度上限；正常收纳恢复不使用此上限。
 const EXPANDED_MAX_H: f64 = 900.0;
 
 /// 持久化键（app_settings 表）
@@ -442,12 +442,24 @@ fn dock_to(
 }
 
 fn expanded_before_dock(state: &WidgetGeometryState, current: Rect, scale: f64) -> Rect {
-    if state.mode == WidgetMode::Collapsed {
+    let normal = if state.mode == WidgetMode::Collapsed {
         let height = state.expanded.map(|r| r.h).unwrap_or(DEFAULT_HEIGHT * scale);
         Rect::new(current.x, current.y, current.w, height)
     } else {
         current
-    }
+    };
+    compact_expanded_rect(normal, scale)
+}
+
+/// 收纳是尺寸重置边界：不把系统贴靠、意外拉大或旧 DPI 下的巨型尺寸带回来。
+/// 更小的有效用户尺寸仍保留；物理/逻辑换算只进行一次。
+fn compact_expanded_rect(rect: Rect, scale: f64) -> Rect {
+    Rect::new(
+        rect.x,
+        rect.y,
+        (rect.w / scale).clamp(EXPANDED_MIN_W, DEFAULT_WIDTH) * scale,
+        restored_logical_height(rect.h, scale) * scale,
+    )
 }
 
 /// 调用者持有转换锁，移动失败不会提交新的锚点。
@@ -587,7 +599,7 @@ fn restored_logical_height(saved_phys_h: f64, scale: f64) -> f64 {
     if logical_h <= COLLAPSED_HEIGHT + 8.0 {
         DEFAULT_HEIGHT
     } else {
-        logical_h.clamp(EXPANDED_MIN_H, EXPANDED_MAX_H)
+        logical_h.clamp(EXPANDED_MIN_H, DEFAULT_HEIGHT)
     }
 }
 
@@ -663,7 +675,7 @@ fn restore_widget_geometry_inner(app: &AppHandle) -> tauri::Result<()> {
         Rect::new(
             x,
             y,
-            (w / scale).clamp(EXPANDED_MIN_W, 700.0) * scale,
+            (w / scale).clamp(EXPANDED_MIN_W, DEFAULT_WIDTH) * scale,
             restored_logical_height(h, scale) * scale,
         )
     } else {
@@ -768,9 +780,9 @@ fn expand_widget_locked(
 
     // 默认几何兜底
     let default_rect = || Rect::new(0.0, 0.0, DEFAULT_WIDTH * scale, DEFAULT_HEIGHT * scale);
-    let normal = expanded.unwrap_or_else(default_rect);
-    let normal_w_logical = (normal.w / scale).clamp(EXPANDED_MIN_W, 700.0);
-    let normal_h_logical = (normal.h / scale).clamp(EXPANDED_MIN_H, EXPANDED_MAX_H);
+    let normal = compact_expanded_rect(expanded.unwrap_or_else(default_rect), scale);
+    let normal_w_logical = normal.w / scale;
+    let normal_h_logical = normal.h / scale;
 
     // 编辑状态与临时高度分别记录：正常高度足够时同样禁止自动收纳。
     let mut next = st.clone();
@@ -797,7 +809,7 @@ fn expand_widget_locked(
         (normal_w_logical, pos)
     } else if st.mode == WidgetMode::Collapsed {
         // 收起条可能被横向拖动/缩放：宽度沿用当前宽度，避免展开后横向跳变
-        let cur_w = (cur.w / scale).clamp(EXPANDED_MIN_W, 700.0);
+        let cur_w = (cur.w / scale).clamp(EXPANDED_MIN_W, DEFAULT_WIDTH);
         let anchor = (cur.x, cur.y);
         let pos = work_area_for(
             widget,
@@ -862,7 +874,7 @@ pub fn collapse_widget_inner(app: &AppHandle, widget: &WebviewWindow) -> tauri::
     let cur = widget_rect(widget).ok_or_else(|| window_error("无法读取窗口几何"))?;
     let scale = widget.scale_factor()?;
     if next.temp_height.is_none() {
-        next.expanded = Some(cur);
+        next.expanded = Some(compact_expanded_rect(cur, scale));
     }
     next.mode = WidgetMode::Collapsed;
     next.temp_height = None;
@@ -876,7 +888,7 @@ pub fn collapse_widget_inner(app: &AppHandle, widget: &WebviewWindow) -> tauri::
         Layout {
             min: mode_min(WidgetMode::Collapsed),
             size: (
-                (cur.w / scale).clamp(EXPANDED_MIN_W, 700.0),
+                (cur.w / scale).clamp(EXPANDED_MIN_W, DEFAULT_WIDTH),
                 COLLAPSED_HEIGHT,
             ),
             position: (cur.x as i32, cur.y as i32),
@@ -998,6 +1010,7 @@ pub fn show_widget(app: &AppHandle) -> tauri::Result<()> {
         .inner_size(DEFAULT_WIDTH, DEFAULT_HEIGHT)
         .min_inner_size(EXPANDED_MIN_W, EXPANDED_MIN_H)
         .resizable(true)
+        .maximizable(false)
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -1174,12 +1187,36 @@ mod tests {
     fn restored_height_clamps_into_expanded_range() {
         assert_eq!(restored_logical_height(440.0, 1.0), 440.0);
         assert_eq!(restored_logical_height(150.0, 1.0), EXPANDED_MIN_H);
-        assert_eq!(restored_logical_height(5000.0, 1.0), EXPANDED_MAX_H);
+        assert_eq!(restored_logical_height(5000.0, 1.0), DEFAULT_HEIGHT);
         // 高 DPI：物理 550 → 逻辑 440
         assert_eq!(restored_logical_height(550.0, 1.25), 440.0);
-        // 快速添加临时 320（旧 bug 写入库）会被夹回 [200, 900] 区间，
+        // 正常较小高度保留，只有巨型窗口被压回紧凑区间。
         // 但核心保障是 should_persist_expanded：临时高度根本不会写库
         assert_eq!(restored_logical_height(320.0, 1.0), 320.0);
+    }
+
+    #[test]
+    fn docking_discards_oversized_geometry_at_every_dpi() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let oversized = Rect::new(100.0, 200.0, 1920.0 * scale, 1080.0 * scale);
+            let mut normal = expanded_before_dock(&WidgetGeometryState::default(), oversized, scale);
+            for _ in 0..20 {
+                assert_eq!(normal.w, DEFAULT_WIDTH * scale);
+                assert_eq!(normal.h, DEFAULT_HEIGHT * scale);
+                normal = compact_expanded_rect(normal, scale);
+            }
+        }
+    }
+
+    #[test]
+    fn compact_restore_keeps_smaller_sizes_and_repairs_legacy_bubble_height() {
+        let small = Rect::new(-100.0, 200.0, 310.0 * 1.5, 280.0 * 1.5);
+        assert_eq!(compact_expanded_rect(small, 1.5), small);
+        let legacy = compact_expanded_rect(Rect::new(0.0, 0.0, 40.0, 40.0), 1.0);
+        assert_eq!((legacy.w, legacy.h), (EXPANDED_MIN_W, DEFAULT_HEIGHT));
+        // 高 DPI 大窗口移到低 DPI 显示器，不能按物理尺寸再次放大恢复。
+        let moved = compact_expanded_rect(Rect::new(10.0, 20.0, 680.0, 880.0), 1.0);
+        assert_eq!((moved.w, moved.h), (DEFAULT_WIDTH, DEFAULT_HEIGHT));
     }
 
     #[test]

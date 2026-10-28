@@ -20,6 +20,7 @@
         "minHeight": 200,
         "visible": true,
         "resizable": true,
+        "maximizable": false,
         "decorations": false,
         "transparent": true,
         "shadow": false,
