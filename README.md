@@ -10,7 +10,7 @@
 
 ## 下载与安装（Windows 用户）
 
-**[直接下载 v0.1.0 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.1.0/CheckIt_0.1.0_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
+**[直接下载 v0.1.1 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.1.1/CheckIt_0.1.1_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
 
 支持 Windows 10/11 64 位。下载 `.exe` 后双击，按向导安装即可，普通用户无需安装 Node.js、Rust 或开发工具。若从版本页面下载，请展开 **Assets** 并选择 `.exe` 安装包，`Source code` 是开发源码。
 
@@ -77,11 +77,11 @@ cargo check              # Rust 编译检查
 npm run tauri build
 ```
 
-产物位于 `src-tauri/target/release/bundle/nsis/CheckIt_0.1.0_x64-setup.exe`。
+产物位于 `src-tauri/target/release/bundle/nsis/CheckIt_0.1.1_x64-setup.exe`。
 
 ## 安装与运行
 
-1. 双击 `CheckIt_0.1.0_x64-setup.exe`，按向导完成安装（当前用户安装，无需管理员权限）。
+1. 双击 `CheckIt_0.1.1_x64-setup.exe`，按向导完成安装（当前用户安装，无需管理员权限）。
 2. 启动后桌面出现 CheckIt 悬浮小组件，可拖动到任意位置。
 3. 点击标题栏 `+` 快速添加任务；点击「全部任务」打开完整管理窗口。
 4. 关闭悬浮窗默认隐藏到系统托盘，提醒继续生效；可在设置中改为"关闭即退出"。

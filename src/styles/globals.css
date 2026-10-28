@@ -180,9 +180,41 @@ textarea {
 
 /* ===== 贴边收纳球 =====
  * 原生窗口本身就是 40×40 逻辑像素圆圈，圆圈外没有可点击的透明区域。
- * 数字在深浅主题下都使用主按钮前景色，0/9/99/99+ 均不裁切。 */
+ * 独立雾紫色板，深浅主题下都保持白字对比度，0/9/99/99+ 均不裁切。
+ * 不使用外描边/外阴影或整体放大，避免 40px 原生窗口边缘出现裁切白框。 */
 .dock-bubble {
   -webkit-app-region: no-drag;
+  appearance: none;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  outline: none;
+  color: #ffffff;
+  background:
+    radial-gradient(ellipse at 28% 18%, #7b6691 0%, transparent 65%),
+    linear-gradient(145deg, #756087 8%, #655178 62%, #544364 100%);
+  box-shadow: inset 0 -2px 4px rgba(35, 23, 46, 0.16);
+  cursor: pointer;
+  touch-action: none;
+  transition: filter 160ms ease;
+}
+
+.dock-bubble:hover {
+  filter: brightness(1.06);
+}
+
+.dock-bubble:active {
+  filter: brightness(0.94);
+}
+
+.dock-bubble:focus-visible {
+  outline: 2px solid #d9c7ef;
+  outline-offset: -4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-bubble { transition: none; }
 }
 
 .dock-bubble-count {

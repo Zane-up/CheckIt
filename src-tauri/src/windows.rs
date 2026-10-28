@@ -155,6 +155,16 @@ fn commit_layout(
         return Err(window_error(error.to_string()));
     }
     geom.2.store(false, Ordering::Relaxed);
+    // Acrylic 会覆盖整个矩形 HWND；圆球必须清除底层效果，才能露出真正透明的四角。
+    // 返回面板时再按用户设置恢复，重贴边不重复切换效果。
+    if (old.mode == WidgetMode::Docked) != (next.mode == WidgetMode::Docked) {
+        let enabled = app
+            .try_state::<crate::commands::CheckItState>()
+            .and_then(|s| s.db.load_settings().ok())
+            .map(|s| s.glass_enabled)
+            .unwrap_or(true);
+        apply_glass_effect(widget, enabled);
+    }
     emit_mode(app, next.mode);
     Ok(next.mode)
 }
@@ -1116,6 +1126,7 @@ pub fn toggle_always_on_top(app: &AppHandle) -> Result<bool, String> {
 
 /// 尝试启用系统原生玻璃效果（Windows Acrylic），失败则降级为 CSS 半透明。
 pub fn apply_glass_effect(window: &tauri::WebviewWindow, enabled: bool) {
+    let enabled = glass_effect_enabled(window.label(), current_mode(window.app_handle()), enabled);
     #[cfg(target_os = "windows")]
     {
         use tauri::utils::config::WindowEffectsConfig;
@@ -1132,14 +1143,9 @@ pub fn apply_glass_effect(window: &tauri::WebviewWindow, enabled: bool) {
                 log::warn!("原生玻璃效果不可用，使用 CSS 半透明降级: {e}");
             }
         } else {
-            let cleared = WindowEffectsConfig {
-                effects: vec![],
-                state: None,
-                radius: None,
-                color: Some(Color(0, 0, 0, 0)),
-                interactive: false,
-            };
-            if let Err(e) = window.set_effects(cleared) {
+            // Some(config) + 空列表在 Tauri/Windows 中直接返回，不会清除旧 Acrylic。
+            // None 才会进入原生 clear_effects，避免透明圆球四角残留矩形底色。
+            if let Err(e) = window.set_effects(None::<WindowEffectsConfig>) {
                 log::warn!("清除窗口效果失败: {e}");
             }
         }
@@ -1150,6 +1156,10 @@ pub fn apply_glass_effect(window: &tauri::WebviewWindow, enabled: bool) {
     }
 }
 
+fn glass_effect_enabled(label: &str, mode: WidgetMode, requested: bool) -> bool {
+    requested && (label != "widget" || mode != WidgetMode::Docked)
+}
+
 /// 当前本地时间描述（托盘提示等场景备用）
 pub fn local_date_text() -> String {
     Local::now().format("%m月%d日 %H:%M").to_string()
@@ -1158,6 +1168,22 @@ pub fn local_date_text() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bubble_has_no_rectangular_acrylic_backdrop() {
+        assert!(!glass_effect_enabled("widget", WidgetMode::Docked, true));
+        assert!(glass_effect_enabled("widget", WidgetMode::Expanded, true));
+        assert!(glass_effect_enabled("widget", WidgetMode::Collapsed, true));
+        assert!(glass_effect_enabled("manager", WidgetMode::Docked, true));
+    }
+
+    #[test]
+    fn changing_window_mode_never_overrides_disabled_glass_preference() {
+        for mode in [WidgetMode::Docked, WidgetMode::Expanded, WidgetMode::Collapsed] {
+            assert!(!glass_effect_enabled("widget", mode, false));
+            assert!(!glass_effect_enabled("manager", mode, false));
+        }
+    }
 
     #[test]
     fn docking_collapsed_bar_preserves_normal_expanded_height() {

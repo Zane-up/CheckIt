@@ -95,7 +95,7 @@ export default function DockBubble({ tasks, onExpand, error }: DockBubbleProps) 
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       data-tauri-drag-region="false"
-      className="dock-bubble flex h-full w-full items-center justify-center rounded-full border border-[var(--glass-border)] bg-[var(--btn-primary-bg)] text-[var(--btn-primary-text)] shadow-lg transition-transform duration-100 hover:scale-105 active:scale-95"
+      className="dock-bubble flex h-full w-full items-center justify-center rounded-full"
     >
       <span
         className="dock-bubble-count pointer-events-none select-none font-semibold leading-none tabular-nums"
