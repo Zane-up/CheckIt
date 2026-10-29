@@ -10,11 +10,11 @@
 
 ## 下载与安装（Windows 用户）
 
-**[直接下载 v0.2.2 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.2.2/CheckIt_0.2.2_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
+**[直接下载 v0.3.0 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.3.0/CheckIt_0.3.0_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
 
 支持 Windows 10/11 64 位。下载 `.exe` 后双击，按向导安装即可，普通用户无需安装 Node.js、Rust 或开发工具。若从版本页面下载，请展开 **Assets** 并选择 `.exe` 安装包，`Source code` 是开发源码。
 
-本次优化详情见 [v0.2.2 更新记录](CHANGELOG.md)。
+本次优化详情见 [v0.3.0 更新记录](CHANGELOG.md)。
 
 ## 功能特性
 
@@ -32,6 +32,10 @@
 - **深浅色主题**：支持深色、浅色与跟随系统；管理窗口玻璃效果和不透明度可调，悬浮面板使用不透明背景保证清晰圆角
 
 设置页底部可手动“检查更新”或打开官方下载页。更新需自行运行新版安装包，覆盖安装保留本机任务；不会自动下载或安装。检查更新需要访问 GitHub，任务管理与提醒仍可离线使用。
+
+设置 → 数据下方提供“本地备份与恢复”：立即备份后可打开文件夹另存到其他磁盘。恢复需要选择文件并确认，将替换当前任务、设置及提醒记录并重启应用；恢复前自动保存当前数据。外部备份复制回该文件夹后，刷新列表即可恢复。数据库结构升级前也会自动备份。
+
+居中提醒窗口支持“全部稍后 5 分钟 / 10 分钟”，重启或睡眠恢复后继续生效；仅延后当前展示的弹窗，不改变任务截止时间与系统通知规则。
 
 ## 技术栈
 
@@ -82,7 +86,7 @@ cargo check              # Rust 编译检查
 npm run tauri build
 ```
 
-当前源码的构建产物位于 `src-tauri/target/release/bundle/nsis/CheckIt_0.2.2_x64-setup.exe`。
+当前源码的构建产物位于 `src-tauri/target/release/bundle/nsis/CheckIt_0.3.0_x64-setup.exe`。
 
 ## 安装与运行
 

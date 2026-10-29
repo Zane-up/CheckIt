@@ -22,6 +22,7 @@ use crate::models::{AppSettings, Category, SettingsPatch};
 
 pub mod error;
 mod popup;
+pub mod backups;
 pub use popup::PopupReminder;
 
 pub use error::DbError;
@@ -103,6 +104,11 @@ impl Database {
             [],
             |row| row.get(0),
         )?;
+
+        if current > 0 && current < 5 && path != Path::new(":memory:") {
+            let directory = path.parent().unwrap_or(Path::new(".")).join("backups");
+            backups::backup_connection(&conn, &directory, "before-upgrade")?;
+        }
 
         // —— 迁移 v1：初始表结构 ——
         if current < 1 {
@@ -257,6 +263,11 @@ impl Database {
                 VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
                 COMMIT;",
             )?;
+        }
+
+        if current < 5 {
+            conn.execute_batch("BEGIN; ALTER TABLE popup_reminders ADD COLUMN snoozed_until TEXT;
+                INSERT INTO schema_migrations(version, applied_at) VALUES(5, strftime('%Y-%m-%dT%H:%M:%fZ','now')); COMMIT;")?;
         }
 
         Ok(())

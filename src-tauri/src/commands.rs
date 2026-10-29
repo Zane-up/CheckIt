@@ -12,6 +12,7 @@ use crate::models::{AppSettings, Category, SettingsPatch, Task, TaskInput};
 
 /// 共享应用状态
 pub struct CheckItState {
+    pub maintenance: Mutex<()>,
     pub db: Database,
     /// 唤醒调度器的信号通道（mpsc Sender 非 Sync，用 Mutex 包装满足 State 的 Sync 约束）
     pub wake: Mutex<Sender<()>>,

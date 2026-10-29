@@ -150,3 +150,12 @@ pub async fn preview_popup_reminder(app: AppHandle) -> Result<(), String> {
     *preview = true;
     refresh_locked(&app, true)
 }
+
+#[tauri::command]
+pub async fn snooze_popup_reminders(app: AppHandle, ids: Vec<i64>, minutes: i64) -> Result<(), String> {
+    let state = app.state::<PopupState>();
+    let mut preview = state.0.lock();
+    app.state::<CheckItState>().db.snooze_popup_reminders(&ids, minutes, chrono::Utc::now()).map_err(|e|e.to_string())?;
+    *preview = false;
+    refresh_locked(&app, false)
+}

@@ -48,6 +48,14 @@ export default function ReminderApp() {
     finally { setBusy(false); }
   }, [busy, snapshot]);
 
+  async function snooze(minutes: number) {
+    if (busy || snapshot.reminders.length === 0) return;
+    setBusy(true); setError(null);
+    try { await api.snoozePopupReminders(snapshot.reminders.map(r => r.id), minutes); }
+    catch(e) { setError(String(e)); }
+    finally { setBusy(false); }
+  }
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") void dismiss(); };
     window.addEventListener("keydown", onKey);
@@ -89,7 +97,10 @@ export default function ReminderApp() {
         {error && <p role="alert" className="break-words text-xs text-[var(--urgent-text)]">提醒读取或确认失败：{error}</p>}
         {!snapshot.preview && snapshot.reminders.length === 0 && !error && <p className="text-sm text-[var(--text-secondary)]">正在读取提醒…</p>}
       </div>
-      <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--glass-border)] px-5 py-3">
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[var(--glass-border)] px-5 py-3">
+        {snapshot.reminders.length > 0 && <div className="flex w-full gap-2">
+          {[5,10].map(minutes => <button key={minutes} type="button" disabled={busy} onClick={()=>void snooze(minutes)} className="rounded-lg border border-[var(--glass-border)] px-3 py-1.5 text-xs disabled:opacity-50">全部稍后 {minutes} 分钟</button>)}
+        </div>}
         <button type="button" disabled={busy} className="text-xs text-[var(--accent-text)] hover:underline"
           onClick={() => void api.openManager().catch((e) => setError(String(e)))}>查看任务</button>
         <button type="button" disabled={busy} onClick={() => void dismiss()}

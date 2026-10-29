@@ -41,7 +41,7 @@ vi.mock("@/hooks/useAppData", () => ({
 }));
 
 vi.mock("@/services/api", () => ({
-  api: { getDbPath: vi.fn(async () => "C:\\fake\\checkit.db"), previewPopupReminder: vi.fn(async () => {}) },
+  api: { listBackups: vi.fn(async () => []), getDbPath: vi.fn(async () => "C:\\fake\\checkit.db"), previewPopupReminder: vi.fn(async () => {}) },
 }));
 
 import SettingsPanel from "@/components/manager/SettingsPanel";

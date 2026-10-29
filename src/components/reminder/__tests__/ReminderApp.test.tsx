@@ -9,10 +9,11 @@ const mocks = vi.hoisted(() => ({
   stop: vi.fn(),
   get: vi.fn<() => Promise<PopupSnapshot>>(),
   dismiss: vi.fn(async (_ids: number[]) => {}),
+  snooze: vi.fn(async (_ids: number[], _minutes: number) => {}),
   manager: vi.fn(async () => {}),
 }));
 vi.mock("@/services/api", () => ({ api: {
-  getPopupReminders: mocks.get, dismissPopupReminders: mocks.dismiss, openManager: mocks.manager,
+  snoozePopupReminders: mocks.snooze, getPopupReminders: mocks.get, dismissPopupReminders: mocks.dismiss, openManager: mocks.manager,
 } }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (_event: string, handler: () => void) => {
   mocks.handler = handler; return mocks.stop;
@@ -31,6 +32,12 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe("居中提醒窗口", () => {
+  it("稍后提醒仅传送当前可见快照，不误清新消息", async () => {
+    render(<ReminderApp />); await screen.findByText("待办 1");
+    mocks.snapshot = { reminders: [item(1), item(2)], preview: false };
+    fireEvent.click(screen.getByRole("button", { name: "全部稍后 5 分钟" }));
+    expect(mocks.snooze).toHaveBeenCalledWith([1], 5);
+  });
   it("根据当前时钟展示逾期时间，不沿用触发时的旧正文", async () => {
     render(<ReminderApp />);
     await screen.findByText("逾期 5分钟 0秒");

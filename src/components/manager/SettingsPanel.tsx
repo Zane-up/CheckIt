@@ -10,6 +10,7 @@ import type { ThemeMode } from "@/types";
 import { ReminderPicker } from "@/components/ui/ReminderPicker";
 import { api } from "@/services/api";
 import UpdateChecker from "./UpdateChecker";
+import BackupPanel from "./BackupPanel";
 
 function Toggle({ checked, onChange, disabled, label }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label?: string }) {
   return (
@@ -182,6 +183,7 @@ export default function SettingsPanel() {
         </div>
       </section>
 
+      <BackupPanel />
       <UpdateChecker />
     </div>
   );

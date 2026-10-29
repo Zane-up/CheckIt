@@ -16,6 +16,11 @@ async function invoke<T>(cmd: string, payload?: Record<string, unknown>): Promis
 }
 
 export const api = {
+  createBackup: () => invoke<string>("create_backup"),
+  listBackups: () => invoke<{ name: string; bytes: number }[]>("list_backups"),
+  restoreBackup: (name: string) => invoke<void>("restore_backup", { name }),
+  openBackupFolder: () => invoke<void>("open_backup_folder"),
+  snoozePopupReminders: (ids: number[], minutes: number) => invoke<void>("snooze_popup_reminders", { ids, minutes }),
   openReleasePage: () => invoke<void>("open_release_page"),
   /** 一次性加载全部状态（任务/分类/设置） */
   getAppState: async (): Promise<AppState> => {

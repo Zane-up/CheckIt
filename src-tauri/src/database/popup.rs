@@ -113,6 +113,25 @@ mod tests {
     }
 
     #[test]
+    fn snooze_survives_restart_and_resume_and_invalidated_task_stays_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        let path=dir.path().join("test.db");
+        let db=Database::open(&path).unwrap();
+        let action=enqueue(&db,"稍后提醒");
+        let now=DateTime::parse_from_rfc3339("2030-01-01T00:00:00Z").unwrap().with_timezone(&Utc);
+        let id=db.list_popup_reminders_at(now).unwrap()[0].id;
+        db.snooze_popup_reminders(&[id],5,now).unwrap();
+        drop(db);
+        let db=Database::open(&path).unwrap();
+        assert!(db.list_popup_reminders_at(now+chrono::Duration::minutes(4)).unwrap().is_empty());
+        assert_eq!(db.list_popup_reminders_at(now+chrono::Duration::minutes(5)).unwrap().len(),1);
+        assert_eq!(db.list_popup_reminders_at(now+chrono::Duration::hours(10)).unwrap().len(),1);
+        assert!(db.snooze_popup_reminders(&[id],0,now).is_err());
+        db.set_task_status(action.task_id,true).unwrap();
+        assert!(db.list_popup_reminders_at(now+chrono::Duration::hours(10)).unwrap().is_empty());
+    }
+
+    #[test]
     fn invalidated_tasks_disappear_from_popup_queue() {
         for change in ["complete", "delete", "reschedule", "remove_offset"] {
             let db = Database::open_in_memory().unwrap();
@@ -217,6 +236,10 @@ impl Database {
 
     /// 已完成、删除、改期、移除提前量的提醒不再出现在收件箱。
     pub fn list_popup_reminders(&self) -> DbResult<Vec<PopupReminder>> {
+        self.list_popup_reminders_at(Utc::now())
+    }
+
+    pub fn list_popup_reminders_at(&self, now: DateTime<Utc>) -> DbResult<Vec<PopupReminder>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT p.event_id, t.id, t.title, p.body, t.due_at
@@ -225,9 +248,10 @@ impl Database {
              JOIN tasks t ON t.id = e.task_id
              JOIN reminders r ON r.task_id = t.id AND r.offset_seconds = e.offset_seconds
              WHERE p.dismissed = 0 AND t.status = 'pending' AND t.due_at = e.due_at_snapshot
+             AND (p.snoozed_until IS NULL OR julianday(p.snoozed_until) <= julianday(?1))
              ORDER BY p.event_id",
         )?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([now.to_rfc3339()], |row| {
             Ok(PopupReminder {
                 id: row.get(0)?,
                 task_id: row.get(1)?,
@@ -248,6 +272,20 @@ impl Database {
                 "UPDATE popup_reminders SET dismissed = 1 WHERE event_id = ?1",
                 [id],
             )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn snooze_popup_reminders(&self, ids: &[i64], minutes: i64, now: DateTime<Utc>) -> DbResult<()> {
+        if ![5,10].contains(&minutes) || ids.len() > 10_000 || ids.is_empty() {
+            return Err(DbError::Validation("请选择 5 或 10 分钟，并至少选择一条提醒".into()));
+        }
+        let until = (now + chrono::Duration::minutes(minutes)).to_rfc3339();
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        for id in ids {
+            tx.execute("UPDATE popup_reminders SET snoozed_until=?2 WHERE event_id=?1 AND dismissed=0", rusqlite::params![id,until])?;
         }
         tx.commit()?;
         Ok(())

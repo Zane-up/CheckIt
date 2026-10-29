@@ -11,7 +11,7 @@ app_settings（key-value）
 schema_migrations（版本）
 ```
 
-## 表结构（v4）
+## 表结构（v5）
 
 ### tasks
 
@@ -79,6 +79,7 @@ schema_migrations（版本）
 | event_id | INTEGER PK → reminder_events(id) ON DELETE CASCADE | 每条提醒事件最多入箱一次 |
 | body | TEXT NOT NULL | 提交时提醒正文快照 |
 | dismissed | INTEGER CHECK IN (0,1) DEFAULT 0 | 确认过的提醒保留标记，重试不会重新弹出 |
+| snoozed_until | TEXT NULL | v5 新增，RFC3339 UTC；延后期间不展示，到期后由后台扫描恢复 |
 
 仅展示任务仍待完成、截止时间快照和提前量仍有效的未确认记录。确认按前端实际展示的 ID 批量执行事务，不清空同时到达的新提醒。重启后恢复未确认记录（收件箱恢复不受新提醒 15 分钟补发宽限限制）。预览不写入此表。
 
@@ -105,7 +106,7 @@ schema_migrations（版本）
 | version | applied_at |
 | --- | --- |
 
-迁移在 `Database::migrate()` 中顺序执行 v1→v2→v3→v4；重复打开时跳过已应用版本（幂等，见测试 `migration_is_idempotent`）。v4 仅增加弹窗收件箱，不改写已有任务或提醒记录。
+迁移在 `Database::migrate()` 中顺序执行 v1→v2→v3→v4→v5；重复打开时跳过已应用版本（幂等，见测试 `migration_is_idempotent`）。v4 仅增加弹窗收件箱，不改写已有任务或提醒记录。
 新建库在一次打开中依次应用全部版本；v1/v2 旧库自动升级且保留数据。
 
 ## 一致性策略
@@ -124,5 +125,13 @@ schema_migrations（版本）
 - 窗口几何以**物理像素**存储（键名带 `_px_` 前缀），跨 DPI 恢复无歧义
 - **单调度器前提**：`recoverable_reminders` 是 SELECT 查询，恢复领取并非跨进程原子操作；
   产品通过 `tauri-plugin-single-instance` 保证同一时刻只有一个应用进程/调度器。引擎明确不支持
-  多调度器并行，绕过单实例保护可能重复领取并重复提交。本版无新增数据库迁移，schema 仍为 v3；
+  多调度器并行，绕过单实例保护可能重复领取并重复提交。v5 新增弹窗延后字段；
   时间戳语义变化（使用提交完成时刻）不改变表结构，不需要迁移
+
+## 备份与恢复（v0.3.0）
+
+使用 SQLite Online Backup API 备份当前连接，包含 WAL 中已提交的数据。目标先写入 .partial，转换为独立 DELETE journal 文件并同步后重命名为 .db。未完成文件不列入恢复列表。备份保存在 app_data_dir/backups，不上传云端，不自动清理用户备份。
+
+数据库结构迁移前、恢复前自动备份；失败时中止迁移或恢复。仅接受本机备份目录内文件，拒绝越界路径。恢复校验 integrity_check、foreign_key_check、版本 4/5 与应用状态解析；旧结构在临时内存库迁移，不改写原备份。恢复期间与调度器互斥，使用 SQLite backup 原子写入当前连接后重启，以重新加载窗口和提醒状态。
+
+稍后提醒只更新当前可见事件 ID 的 snoozed_until，不修改 reminder_events 去重状态、不创建系统通知、不改变截止时间。取消、改期、完成任务仍通过原队列关联条件过滤；重启或睡眠恢复后到期的未确认弹窗会再次显示。

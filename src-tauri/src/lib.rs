@@ -2,6 +2,7 @@
 
 pub mod commands;
 mod updates;
+mod backups;
 pub mod database;
 pub mod diagnostics;
 pub mod dock;
@@ -47,6 +48,9 @@ fn spawn_scheduler(app: AppHandle, wake_rx: mpsc::Receiver<()>) {
         let transport = SystemNotificationTransport::from_identifier(&app.config().identifier);
 
         loop {
+            {
+            let state = app.state::<CheckItState>();
+            let _maintenance = state.maintenance.lock();
             // 一次扫描共用一个时钟：领取、恢复、宽限判断使用完全相同的 now。
             let now = Utc::now();
             match engine.run_once(now) {
@@ -64,6 +68,7 @@ fn spawn_scheduler(app: AppHandle, wake_rx: mpsc::Receiver<()>) {
             // 恢复尚未确认的弹窗，并剔除已完成、删除、改期的任务。
             if let Err(e) = popup::refresh(&app) {
                 log::warn!("刷新居中提醒失败: {e}");
+            }
             }
 
             // 等待下一次：定时或唤醒信号
@@ -177,6 +182,7 @@ pub fn run() {
 
             let (wake_tx, wake_rx) = mpsc::channel::<()>();
             app.manage(CheckItState {
+                maintenance: parking_lot::Mutex::new(()),
                 db: db.clone(),
                 wake: parking_lot::Mutex::new(wake_tx),
             });
@@ -210,6 +216,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
             updates::open_release_page,
+            backups::create_backup,
+            backups::list_backups,
+            backups::restore_backup,
+            backups::open_backup_folder,
+            popup::snooze_popup_reminders,
             popup::get_popup_reminders,
             popup::dismiss_popup_reminders,
             popup::preview_popup_reminder,

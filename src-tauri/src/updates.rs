@@ -1,11 +1,19 @@
 /// 只允许打开固定官方下载页，不接受来自 WebView 的任意 URL 或命令。
 #[tauri::command]
 pub async fn open_release_page() -> Result<(), String> {
+    open_target("https://github.com/Zane-up/CheckIt/releases/latest")
+}
+
+pub(crate) fn open_target(target: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
-        let url: Vec<u16> = "https://github.com/Zane-up/CheckIt/releases/latest\0"
+        let url: Vec<u16> = std::ffi::CString::new(target)
+            .map_err(|e| e.to_string())?
+            .to_str()
+            .map_err(|e| e.to_string())?
             .encode_utf16()
+            .chain(Some(0))
             .collect();
         let operation: Vec<u16> = "open\0".encode_utf16().collect();
         let result = unsafe {
