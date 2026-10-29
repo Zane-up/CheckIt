@@ -9,7 +9,7 @@ import { t } from "@/i18n/zh";
 import type { ThemeMode } from "@/types";
 import { ReminderPicker } from "@/components/ui/ReminderPicker";
 import { api } from "@/services/api";
-import { version } from "../../../package.json";
+import UpdateChecker from "./UpdateChecker";
 
 function Toggle({ checked, onChange, disabled, label }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label?: string }) {
   return (
@@ -49,18 +49,21 @@ export default function SettingsPanel() {
   const s = state.settings;
   const [dbPath, setDbPath] = useState("");
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     void api.getDbPath().then(setDbPath).catch(() => setDbPath(""));
   }, []);
 
   const set = (patch: Parameters<typeof updateSettings>[0]) => {
-    void updateSettings(patch).catch((e) => console.error("保存设置失败", e));
+    setSaveError(null);
+    void updateSettings(patch).catch((e) => setSaveError(`保存设置失败，请重试：${e instanceof Error ? e.message : String(e)}`));
   };
 
   return (
     <div className="mx-auto w-full max-w-xl overflow-y-auto px-6 py-5">
       <h1 className="mb-4 text-[15px] font-semibold">{t.settings.title}</h1>
+      {saveError && <div role="alert" className="mb-3 text-sm text-[var(--urgent-text)]">{saveError}</div>}
 
       <section className="mb-5">
         <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">{t.settings.appearance}</h2>
@@ -84,11 +87,13 @@ export default function SettingsPanel() {
             </div>
           </Row>
           <Row label={t.settings.glass} hint={t.settings.glassHint}>
-            <Toggle checked={s.glass_enabled} onChange={(v) => set({ glass_enabled: v })} />
+            <Toggle label={t.settings.glass} checked={s.glass_enabled} onChange={(v) => set({ glass_enabled: v })} />
           </Row>
-          <Row label={t.settings.glassOpacity}>
+          <Row label={t.settings.glassOpacity} hint="悬浮面板始终使用不透明底色，以保持圆角完整和文字清晰。">
             <input
               type="range"
+              aria-label={t.settings.glassOpacity}
+              disabled={!s.glass_enabled}
               min={0.05}
               max={0.6}
               step={0.05}
@@ -177,9 +182,7 @@ export default function SettingsPanel() {
         </div>
       </section>
 
-      <div className="mt-6 border-t border-[var(--glass-border)] pt-3 text-center text-[12px] text-[var(--text-muted)]">
-        CheckIt v{version} · Check it. Get it done.
-      </div>
+      <UpdateChecker />
     </div>
   );
 }

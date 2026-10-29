@@ -49,7 +49,7 @@ export function WidgetFullPanel({
   const dateText = `${today.getMonth() + 1}月${today.getDate()}日 周${"日一二三四五六"[today.getDay()]}`;
 
   return (
-    <div className="glass-panel flex h-full w-full flex-col overflow-hidden rounded-2xl">
+    <div className="glass-panel native-window-surface flex h-full w-full flex-col overflow-hidden">
       <WidgetHeader dateText={dateText} onAdd={onAdd} onToggleCollapse={onCollapse} collapsed={false} />
 
       <div className="anim-fade-in flex min-h-0 flex-1 flex-col">
@@ -85,7 +85,7 @@ export function WidgetCollapsedBar({
   const dateText = `${today.getMonth() + 1}月${today.getDate()}日 周${"日一二三四五六"[today.getDay()]}`;
 
   return (
-    <div className="glass-panel flex h-full w-full flex-col overflow-hidden rounded-2xl">
+    <div className="glass-panel native-window-surface flex h-full w-full flex-col overflow-hidden">
       <WidgetHeader dateText={dateText} onAdd={onAdd} onToggleCollapse={onExpand} collapsed />
     </div>
   );

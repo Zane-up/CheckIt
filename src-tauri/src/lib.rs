@@ -1,6 +1,7 @@
 //! CheckIt 库入口：组装数据库、调度器、托盘与命令。
 
 pub mod commands;
+mod updates;
 pub mod database;
 pub mod diagnostics;
 pub mod dock;
@@ -208,6 +209,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
+            updates::open_release_page,
             popup::get_popup_reminders,
             popup::dismiss_popup_reminders,
             popup::preview_popup_reminder,

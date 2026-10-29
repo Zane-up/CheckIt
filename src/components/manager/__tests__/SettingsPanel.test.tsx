@@ -57,6 +57,15 @@ async function waitForDbPath() {
 }
 
 describe("SettingsPanel 默认提醒", () => {
+  it("保存失败可见，玻璃关闭后禁用不透明度", async () => {
+    mocks.settings!.glass_enabled = false;
+    mocks.updateSettings.mockRejectedValueOnce(new Error("disk full"));
+    render(<SettingsPanel />);
+    await waitForDbPath();
+    expect((screen.getByRole("slider") as HTMLInputElement).disabled).toBe(true);
+    await userEvent.click(screen.getByRole("switch", { name: t.settings.glass }));
+    expect((await screen.findByRole("alert")).textContent).toContain("保存设置失败");
+  });
   it("居中弹窗开关独立保存，不改变系统通知", async () => {
     render(<SettingsPanel />);
     await waitForDbPath();

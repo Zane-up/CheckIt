@@ -10,11 +10,11 @@
 
 ## 下载与安装（Windows 用户）
 
-**[直接下载 v0.2.0 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.2.0/CheckIt_0.2.0_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
+**[直接下载 v0.2.2 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.2.2/CheckIt_0.2.2_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
 
 支持 Windows 10/11 64 位。下载 `.exe` 后双击，按向导安装即可，普通用户无需安装 Node.js、Rust 或开发工具。若从版本页面下载，请展开 **Assets** 并选择 `.exe` 安装包，`Source code` 是开发源码。
 
-本次优化详情见 [v0.2.0 更新记录](CHANGELOG.md)。
+本次优化详情见 [v0.2.2 更新记录](CHANGELOG.md)。
 
 ## 功能特性
 
@@ -29,7 +29,9 @@
 - **屏幕居中提醒（v0.2.0）**：设置 → 提醒中开启“屏幕居中弹窗提醒”，可单独使用或与系统通知同时开启；支持无任务预览、多条提醒合并、确认关闭，以及未确认提醒重启恢复。旧版升级后默认关闭此选项
 - **系统托盘**：关闭窗口可驻留后台继续提醒，托盘菜单快速操作
 - **SQLite 持久化**：全部数据本地存储于系统应用数据目录，完全离线可用
-- **深浅色主题**：默认深色玻璃态，支持浅色与跟随系统，透明度可调
+- **深浅色主题**：支持深色、浅色与跟随系统；管理窗口玻璃效果和不透明度可调，悬浮面板使用不透明背景保证清晰圆角
+
+设置页底部可手动“检查更新”或打开官方下载页。更新需自行运行新版安装包，覆盖安装保留本机任务；不会自动下载或安装。检查更新需要访问 GitHub，任务管理与提醒仍可离线使用。
 
 ## 技术栈
 
@@ -80,7 +82,7 @@ cargo check              # Rust 编译检查
 npm run tauri build
 ```
 
-当前源码的构建产物位于 `src-tauri/target/release/bundle/nsis/CheckIt_0.2.0_x64-setup.exe`。
+当前源码的构建产物位于 `src-tauri/target/release/bundle/nsis/CheckIt_0.2.2_x64-setup.exe`。
 
 ## 安装与运行
 

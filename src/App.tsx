@@ -114,7 +114,7 @@ export default function App() {
 /** Theme/Now 依赖数据设置；错误态下也要有主题变量可用，因此顺序：DataGate 内外皆可 */
 function DataProviderInner({ label }: { label: string }) {
   return (
-    <ThemeProvider>
+    <ThemeProvider allowGlass={label === "manager"}>
       <NowProvider>
         {label === "reminder" ? <ReminderApp /> : (
           <DataGate>{label === "manager" ? <ManagerApp /> : <WidgetApp />}</DataGate>

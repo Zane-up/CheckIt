@@ -16,6 +16,7 @@ async function invoke<T>(cmd: string, payload?: Record<string, unknown>): Promis
 }
 
 export const api = {
+  openReleasePage: () => invoke<void>("open_release_page"),
   /** 一次性加载全部状态（任务/分类/设置） */
   getAppState: async (): Promise<AppState> => {
     // 静态 WebView 可以早于 Rust setup 完成加载。只重试这个明确的瞬时错误；

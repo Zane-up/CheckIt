@@ -25,7 +25,7 @@ function systemPrefersDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children, allowGlass = true }: { children: ReactNode; allowGlass?: boolean }) {
   const { state } = useAppData();
   const { theme: mode, glass_enabled, glass_opacity } = state.settings;
 
@@ -45,13 +45,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle("no-glass", !glass_enabled);
-    root.style.setProperty("--glass-opacity", String(glass_opacity));
-  }, [glass_enabled, glass_opacity]);
+    root.classList.toggle("no-glass", !allowGlass || !glass_enabled);
+    root.style.setProperty("--glass-opacity", String(allowGlass ? glass_opacity : 0.35));
+  }, [allowGlass, glass_enabled, glass_opacity]);
 
   const value = useMemo(
-    () => ({ theme: effective, mode, glassEnabled: glass_enabled, glassOpacity: glass_opacity }),
-    [effective, mode, glass_enabled, glass_opacity],
+    () => ({ theme: effective, mode, glassEnabled: allowGlass && glass_enabled, glassOpacity: allowGlass ? glass_opacity : 0.35 }),
+    [effective, mode, allowGlass, glass_enabled, glass_opacity],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

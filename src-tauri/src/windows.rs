@@ -1161,8 +1161,11 @@ pub fn apply_glass_effect(window: &tauri::WebviewWindow, enabled: bool) {
     }
 }
 
-fn glass_effect_enabled(label: &str, mode: WidgetMode, requested: bool) -> bool {
-    requested && (label != "widget" || mode != WidgetMode::Docked)
+fn glass_effect_enabled(label: &str, _mode: WidgetMode, requested: bool) -> bool {
+    // 无边框悬浮窗只由 WebView 绘制背景。Acrylic 的合成底板在部分
+    // Windows/DPI 组合下仍会越过圆弧边缘；窗口区域与 CSS 圆角不能可靠消除它。
+    // 管理窗口继续使用原生玻璃；悬浮窗背景由前端统一绘制。
+    requested && label != "widget"
 }
 
 /// 当前本地时间描述（托盘提示等场景备用）
@@ -1177,8 +1180,8 @@ mod tests {
     #[test]
     fn bubble_has_no_rectangular_acrylic_backdrop() {
         assert!(!glass_effect_enabled("widget", WidgetMode::Docked, true));
-        assert!(glass_effect_enabled("widget", WidgetMode::Expanded, true));
-        assert!(glass_effect_enabled("widget", WidgetMode::Collapsed, true));
+        assert!(!glass_effect_enabled("widget", WidgetMode::Expanded, true));
+        assert!(!glass_effect_enabled("widget", WidgetMode::Collapsed, true));
         assert!(glass_effect_enabled("manager", WidgetMode::Docked, true));
     }
 
