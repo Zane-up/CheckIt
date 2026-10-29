@@ -385,7 +385,7 @@ impl ReminderEngine {
 
                 let content = NotificationContent {
                     title: "CheckIt".to_string(),
-                    body: notification_body(&task.title, due_at, started_at),
+                    body: notification_body_localized(&task.title, due_at, started_at, &self.db.load_settings()?.language),
                 };
 
                 match transport.submit(&content) {
@@ -445,6 +445,16 @@ pub fn notification_body(title: &str, due_at: DateTime<Utc>, now: DateTime<Utc>)
     } else {
         format!("「{name}」已逾期 {}", duration_text(-secs))
     }
+}
+
+pub fn notification_body_localized(title: &str, due_at: DateTime<Utc>, now: DateTime<Utc>, language: &str) -> String {
+    if language != "en" { return notification_body(title, due_at, now); }
+    let secs=(due_at-now).num_seconds();
+    let value=secs.unsigned_abs();
+    let duration=if value<60 {format!("{value}s")} else if value<3600 {format!("{}m",value/60)}
+        else if value<86400 {format!("{}h {}m",value/3600,value%3600/60)} else {format!("{}d {}h",value/86400,value%86400/3600)};
+    let name=truncate_chars(title,40);
+    if secs>0 {format!("“{name}” is due in {duration}")} else {format!("“{name}” is overdue by {duration}")}
 }
 
 /// 秒数 → 简短时长文本（通知用，不含前缀）
@@ -1419,4 +1429,15 @@ mod tests {
         assert_eq!(duration_text(3 * 3600 + 20 * 60), "3小时20分钟");
         assert_eq!(duration_text(2 * 86400 + 5 * 3600), "2天5小时");
     }
+}
+
+#[cfg(test)]
+mod language_tests {
+ use super::*;
+ #[test]
+ fn english_notification_uses_actual_due_time_and_preserves_user_title() {
+ let now=Utc::now();let due=now+chrono::Duration::minutes(90);
+ assert_eq!(notification_body_localized("学习",due,now,"en"),"“学习” is due in 1h 30m");
+ assert_eq!(notification_body_localized("学习",now-chrono::Duration::seconds(30),now,"en"),"“学习” is overdue by 30s");
+ }
 }

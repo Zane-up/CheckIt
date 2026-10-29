@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AppSettings {
+    #[serde(default = "default_language")]
+    pub language: String,
     /// dark | light | system
     pub theme: String,
     pub glass_enabled: bool,
@@ -29,9 +31,12 @@ fn default_true() -> bool {
     true
 }
 
+fn default_language() -> String { "zh-CN".into() }
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            language: default_language(),
             theme: "dark".into(),
             glass_enabled: true,
             glass_opacity: 0.35,
@@ -54,6 +59,7 @@ impl AppSettings {
 
     /// 校验并夹紧取值范围，防止持久化非法配置。
     pub fn sanitized(mut self) -> Self {
+        if self.language != "en" { self.language = default_language(); }
         self.theme = match self.theme.as_str() {
             "light" => "light".into(),
             "system" => "system".into(),
@@ -75,6 +81,7 @@ impl AppSettings {
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SettingsPatch {
+    pub language: Option<String>,
     pub theme: Option<String>,
     pub glass_enabled: Option<bool>,
     pub glass_opacity: Option<f64>,
@@ -90,6 +97,7 @@ pub struct SettingsPatch {
 
 impl SettingsPatch {
     pub fn apply_to(&self, s: &mut AppSettings) {
+        if let Some(v) = &self.language { s.language = v.clone(); }
         if let Some(v) = &self.theme {
             s.theme = v.clone();
         }
@@ -141,6 +149,16 @@ mod tests {
         assert!(!settings.reminders_enabled());
         settings.popup_reminders_enabled = true;
         assert!(settings.reminders_enabled());
+    }
+
+    #[test]
+    fn language_defaults_and_validation_are_backward_compatible() {
+        let mut legacy=serde_json::to_value(AppSettings::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("language");
+        let settings:AppSettings=serde_json::from_value(legacy).unwrap();
+        assert_eq!(settings.language,"zh-CN");
+        let mut invalid=settings.clone();invalid.language="unsupported".into();
+        assert_eq!(invalid.sanitized().language,"zh-CN");
     }
 
     #[test]

@@ -1,3 +1,4 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 应用入口：同一前端包服务两个窗口，按窗口 label 渲染对应界面。
  * - widget  : 桌面悬浮小组件（主界面）
@@ -15,10 +16,11 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import WidgetApp from "@/components/widget/WidgetApp";
 import ManagerApp from "@/components/manager/ManagerApp";
 import ReminderApp from "@/components/reminder/ReminderApp";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 
 /** 数据门卫：首次加载才允许占满全屏；已加载后刷新失败只显示可重试提示，保留界面与草稿 */
 export function DataGate({ children }: { children: React.ReactNode }) {
+  useI18n();
   const { loading, hasData, error, syncError, reload, retrySync } = useAppData();
 
   if (loading && !hasData) {
@@ -35,7 +37,7 @@ export function DataGate({ children }: { children: React.ReactNode }) {
       <div className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--glass-border)] bg-[var(--surface-overlay)] px-8 text-center">
         <div className="text-[13px] text-[var(--urgent-text)]">{t.errors.loadFailed}</div>
         <div className="max-w-[260px] text-[12px] break-all text-[var(--text-secondary)]">
-          {error ?? "未能连接到本地数据"}
+          {error ?? tr("未能连接到本地数据")}
         </div>
         <button
           type="button"
@@ -93,6 +95,7 @@ export function DataGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useI18n();
   const [label, setLabel] = useState<string | null>(null);
 
   useEffect(() => {
@@ -113,6 +116,7 @@ export default function App() {
 
 /** Theme/Now 依赖数据设置；错误态下也要有主题变量可用，因此顺序：DataGate 内外皆可 */
 function DataProviderInner({ label }: { label: string }) {
+  useI18n();
   return (
     <ThemeProvider allowGlass={label === "manager"}>
       <NowProvider>

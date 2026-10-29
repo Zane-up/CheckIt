@@ -18,6 +18,7 @@ let handlers: Map<string, Handler>;
 
 function settings(): AppSettings {
   return {
+    language: "zh-CN",
     theme: "dark",
     glass_enabled: true,
     glass_opacity: 0.35,

@@ -765,3 +765,13 @@ fn concurrent_settings_patch_and_pin_keep_all_fields() {
         "偶数次翻转应回到初始值，且不被补丁覆盖"
     );
 }
+
+#[test]
+fn language_is_persisted_and_does_not_change_tasks() {
+ let dir=tempfile::tempdir().unwrap();let path=dir.path().join("language.db");
+ let db=Database::open(&path).unwrap();db.ensure_default_categories().unwrap();
+ let before=serde_json::to_value(db.get_app_state().unwrap().categories).unwrap();
+ db.apply_settings_patch(&SettingsPatch{language:Some("en".into()),..Default::default()}).unwrap();drop(db);
+ let db=Database::open(&path).unwrap();assert_eq!(db.load_settings().unwrap().language,"en");
+ assert_eq!(serde_json::to_value(db.get_app_state().unwrap().categories).unwrap(),before);
+}

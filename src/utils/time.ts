@@ -1,3 +1,4 @@
+import { dateLocale, getLanguage, tr } from "@/i18n";
 /**
  * 时间工具：统一使用真实时间戳（Date.now()）与 UTC 存储策略。
  * 所有展示使用用户本地时区（Date 自动处理）。
@@ -27,10 +28,11 @@ export function utcIsoToLocalInput(iso: string | null): string {
 
 /** 本地时区展示：10月26日 18:00 */
 export function formatDueLocal(iso: string | null): string {
-  if (!iso) return "无截止时间";
+  if (!iso) return tr("无截止时间");
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "无效时间";
+  if (Number.isNaN(d.getTime())) return tr("无效时间");
   const pad = (n: number) => String(n).padStart(2, "0");
+  if (getLanguage() === "en") return d.toLocaleString(dateLocale(), {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit", hour12:false});
   return `${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 

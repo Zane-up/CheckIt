@@ -1,3 +1,4 @@
+import { tr } from "@/i18n";
 /**
  * 提醒预设与自定义提前量：提前量以秒为单位集中定义。
  * 与 Rust 侧 reminders/engine.rs 中的语义一致（0 = 截止时提醒）。
@@ -10,12 +11,12 @@ export interface ReminderPreset {
 }
 
 export const REMINDER_PRESETS: readonly ReminderPreset[] = [
-  { offsetSeconds: 86400, label: "提前 1 天" },
-  { offsetSeconds: 10800, label: "提前 3 小时" },
-  { offsetSeconds: 3600, label: "提前 1 小时" },
-  { offsetSeconds: 1800, label: "提前 30 分钟" },
-  { offsetSeconds: 600, label: "提前 10 分钟" },
-  { offsetSeconds: 0, label: "截止时" },
+  { offsetSeconds: 86400, get label() { return tr("提前 1 天"); } },
+  { offsetSeconds: 10800, get label() { return tr("提前 3 小时"); } },
+  { offsetSeconds: 3600, get label() { return tr("提前 1 小时"); } },
+  { offsetSeconds: 1800, get label() { return tr("提前 30 分钟"); } },
+  { offsetSeconds: 600, get label() { return tr("提前 10 分钟"); } },
+  { offsetSeconds: 0, get label() { return tr("截止时"); } },
 ] as const;
 
 /** 自定义提前量的输入单位 */
@@ -60,10 +61,10 @@ export function parseReminderAmount(raw: string, unit: ReminderUnit): ReminderPa
 export function offsetLabel(offsetSeconds: number): string {
   const preset = REMINDER_PRESETS.find((p) => p.offsetSeconds === offsetSeconds);
   if (preset) return preset.label;
-  if (offsetSeconds % 86400 === 0) return `提前 ${offsetSeconds / 86400} 天`;
-  if (offsetSeconds % 3600 === 0) return `提前 ${offsetSeconds / 3600} 小时`;
-  if (offsetSeconds % 60 === 0) return `提前 ${offsetSeconds / 60} 分钟`;
-  return `提前 ${offsetSeconds} 秒`;
+  if (offsetSeconds % 86400 === 0) return tr("提前 {0} 天", offsetSeconds / 86400);
+  if (offsetSeconds % 3600 === 0) return tr("提前 {0} 小时", offsetSeconds / 3600);
+  if (offsetSeconds % 60 === 0) return tr("提前 {0} 分钟", offsetSeconds / 60);
+  return tr("提前 {0} 秒", offsetSeconds);
 }
 
 /** 供表单使用：规范化用户勾选的提醒集合（去重、升序） */

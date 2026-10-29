@@ -1,3 +1,4 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 分类管理：新建 / 重命名 / 换色 / 删除。
  * 删除分类不删除任务（后端将关联任务置为未分类）。
@@ -6,7 +7,7 @@
 import { useState } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useAppData } from "@/hooks/useAppData";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import { Button } from "@/components/ui/Buttons";
 
 const PRESET_COLORS = [
@@ -21,6 +22,7 @@ interface Draft {
 }
 
 export default function CategoryManager() {
+  useI18n();
   const { state, createCategory, updateCategory, deleteCategory } = useAppData();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export default function CategoryManager() {
     if (!draft) return;
     const name = draft.name.trim();
     if (!name) {
-      setError("请输入分类名称");
+      setError(tr("请输入分类名称"));
       return;
     }
     try {
@@ -77,8 +79,7 @@ export default function CategoryManager() {
             <span className="h-3 w-3 rounded-full" style={{ backgroundColor: c.color }} />
             <span className="min-w-0 flex-1 truncate text-[13px]">{c.name}</span>
             <span className="text-[12px] text-[var(--text-secondary)]">
-              {state.tasks.filter((task) => task.category_id === c.id && task.status === "pending").length} 项
-            </span>
+              {state.tasks.filter((task) => task.category_id === c.id && task.status === "pending").length} {tr("项")}</span>
             <button
               type="button"
               className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"

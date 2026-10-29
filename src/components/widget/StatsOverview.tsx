@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n";
 /**
  * 状态概览：待办 / 今日到期 / 已逾期 紧凑一行。
  * 标签与数字分层：数字更大更重，标签 12px 中等字重且使用稳定的次文字色，
@@ -5,13 +6,14 @@
  */
 
 import type { TaskStats } from "@/utils/tasks";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 
 interface StatsOverviewProps {
   stats: TaskStats;
 }
 
 function StatItem({ value, label, color }: { value: number; label: string; color?: string }) {
+  useI18n();
   return (
     <div className="glass-subtle flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-1.5 py-2">
       <span
@@ -28,6 +30,7 @@ function StatItem({ value, label, color }: { value: number; label: string; color
 }
 
 export default function StatsOverview({ stats }: StatsOverviewProps) {
+  useI18n();
   return (
     <div className="flex shrink-0 gap-2 px-3 pb-2">
       <StatItem value={stats.pending} label={t.widget.stats.pending} />

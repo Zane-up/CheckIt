@@ -987,7 +987,9 @@ pub fn open_manager(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     // 管理窗口也可应用玻璃效果（Mica / Acrylic）
-    apply_glass_effect(&win, true);
+    let settings=app.state::<crate::commands::CheckItState>().db.load_settings().unwrap_or_default();
+    apply_glass_effect(&win, settings.glass_enabled);
+    crate::tray::sync_language(app, &settings.language);
     Ok(())
 }
 
@@ -1035,6 +1037,7 @@ pub fn show_widget(app: &AppHandle) -> tauri::Result<()> {
         expand_widget_inner(app, &win, None)?;
     }
     apply_glass_effect(&win, settings.glass_enabled);
+    crate::tray::sync_language(app, &settings.language);
     Ok(())
 }
 

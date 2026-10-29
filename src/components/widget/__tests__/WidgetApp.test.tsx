@@ -55,6 +55,7 @@ vi.mock("@/hooks/useAppData", () => ({
       tasks: mocks.tasks,
       categories: [],
       settings: {
+        language: "zh-CN",
         theme: "dark",
         glass_enabled: true,
         glass_opacity: 0.35,

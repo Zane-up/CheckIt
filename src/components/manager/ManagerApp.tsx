@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n";
 /**
  * 完整任务管理窗口：左侧导航 + 主内容区。
  * 视图：全部 / 今日 / 未来 7 天 / 已逾期 / 已完成 / 分类 / 设置。
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import { useAppData } from "@/hooks/useAppData";
 import { useNow } from "@/hooks/useNow";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import type { Task } from "@/types";
 import { applyTaskFilter, DEFAULT_FILTER, sortTasks, type SortKey, type TaskFilter } from "@/utils/tasks";
 import { isDueToday, isOverdue } from "@/utils/time";
@@ -34,6 +35,7 @@ type ViewId =
   | { kind: "settings" };
 
 export default function ManagerApp() {
+  useI18n();
   const { state } = useAppData();
   const now = useNow();
   const [view, setView] = useState<ViewId>({ kind: "all" });

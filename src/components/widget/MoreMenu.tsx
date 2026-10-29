@@ -1,10 +1,11 @@
+import { useI18n } from "@/i18n";
 /**
  * 更多菜单：打开管理窗口 / 设置 / 置顶切换 / 退出。
  */
 
 import { Layers, Pin, Settings, LogOut } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import { api } from "@/services/api";
 
 interface MoreMenuProps {
@@ -12,6 +13,7 @@ interface MoreMenuProps {
 }
 
 export default function MoreMenu({ onClose }: MoreMenuProps) {
+  useI18n();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

@@ -1,10 +1,11 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 任务列表视图（管理窗口主区）：工具栏（搜索/筛选/排序）+ 任务列表 + 新建按钮。
  */
 
 import { Filter, Plus, Search } from "lucide-react";
 import { useAppData } from "@/hooks/useAppData";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import type { Task } from "@/types";
 import type { SortKey, TaskFilter } from "@/utils/tasks";
 import TaskListItem from "@/components/shared/TaskListItem";
@@ -33,6 +34,7 @@ export default function TaskListView({
   onEditTask,
   onCreate,
 }: TaskListViewProps) {
+  useI18n();
   const { state } = useAppData();
 
   return (
@@ -71,7 +73,7 @@ export default function TaskListView({
           className="field-input !w-auto !py-1 text-xs"
           value={sortKey}
           onChange={(e) => onSortChange(e.target.value as SortKey)}
-          title="排序"
+          title={tr("排序")}
         >
           <option value="due_asc">{t.filter.sortDueAsc}</option>
           <option value="due_desc">{t.filter.sortDueDesc}</option>
@@ -90,7 +92,7 @@ export default function TaskListView({
         {tasks.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--text-secondary)]">
             <Filter size={26} strokeWidth={1.5} />
-            <div className="text-[13px]">没有符合条件的任务</div>
+            <div className="text-[13px]">{tr("没有符合条件的任务")}</div>
           </div>
         ) : (
           <ul className="flex flex-col gap-0.5">

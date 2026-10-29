@@ -1,3 +1,4 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 设置面板：外观 / 行为 / 提醒 / 数据。
  * 所有修改即时持久化到 SQLite（updateSettings）。
@@ -5,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import type { ThemeMode } from "@/types";
 import { ReminderPicker } from "@/components/ui/ReminderPicker";
 import { api } from "@/services/api";
@@ -13,6 +14,7 @@ import UpdateChecker from "./UpdateChecker";
 import BackupPanel from "./BackupPanel";
 
 function Toggle({ checked, onChange, disabled, label }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label?: string }) {
+  useI18n();
   return (
     <button
       type="button"
@@ -34,6 +36,7 @@ function Toggle({ checked, onChange, disabled, label }: { checked: boolean; onCh
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  useI18n();
   return (
     <div className="glass-subtle flex items-center justify-between gap-4 rounded-xl px-4 py-2.5">
       <div className="min-w-0">
@@ -46,6 +49,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 }
 
 export default function SettingsPanel() {
+  useI18n();
   const { state, updateSettings } = useAppData();
   const s = state.settings;
   const [dbPath, setDbPath] = useState("");
@@ -58,12 +62,19 @@ export default function SettingsPanel() {
 
   const set = (patch: Parameters<typeof updateSettings>[0]) => {
     setSaveError(null);
-    void updateSettings(patch).catch((e) => setSaveError(`保存设置失败，请重试：${e instanceof Error ? e.message : String(e)}`));
+    void updateSettings(patch).catch((e) => setSaveError(tr("保存设置失败，请重试：{0}", e instanceof Error ? e.message : String(e))));
   };
 
   return (
     <div className="mx-auto w-full max-w-xl overflow-y-auto px-6 py-5">
       <h1 className="mb-4 text-[15px] font-semibold">{t.settings.title}</h1>
+      <div className="mb-4">
+        <Row label="语言 / Language">
+          <select aria-label="语言 / Language" value={s.language ?? "zh-CN"} onChange={e => set({language:e.target.value as "zh-CN"|"en"})} className="field-input !w-36">
+            <option value="zh-CN">简体中文</option><option value="en">English</option>
+          </select>
+        </Row>
+      </div>
       {saveError && <div role="alert" className="mb-3 text-sm text-[var(--urgent-text)]">{saveError}</div>}
 
       <section className="mb-5">
@@ -90,7 +101,7 @@ export default function SettingsPanel() {
           <Row label={t.settings.glass} hint={t.settings.glassHint}>
             <Toggle label={t.settings.glass} checked={s.glass_enabled} onChange={(v) => set({ glass_enabled: v })} />
           </Row>
-          <Row label={t.settings.glassOpacity} hint="悬浮面板始终使用不透明底色，以保持圆角完整和文字清晰。">
+          <Row label={t.settings.glassOpacity} hint={tr("悬浮面板始终使用不透明底色，以保持圆角完整和文字清晰。")}>
             <input
               type="range"
               aria-label={t.settings.glassOpacity}
@@ -154,7 +165,7 @@ export default function SettingsPanel() {
             />
           </Row>
           <div className="glass-subtle rounded-xl px-4 py-2.5">
-            <div className="mb-1 text-[13px]">新任务默认提醒</div>
+            <div className="mb-1 text-[13px]">{tr("新任务默认提醒")}</div>
             <div className="mb-2 text-[12px] leading-snug text-[var(--text-muted)]">{t.settings.defaultRemindersHint}</div>
             <ReminderPicker
               offsets={s.default_reminder_offsets}
@@ -178,8 +189,7 @@ export default function SettingsPanel() {
             className="shrink-0 text-xs text-[var(--accent-text)] hover:underline"
             onClick={() => void api.getDbPath().then((p) => navigator.clipboard.writeText(p))}
           >
-            复制路径
-          </button>
+            {tr("复制路径")}</button>
         </div>
       </section>
 

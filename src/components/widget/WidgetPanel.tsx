@@ -1,3 +1,4 @@
+import { widgetDate, useI18n } from "@/i18n";
 /**
  * 悬浮窗完整面板与标题栏收起视图。
  *
@@ -38,6 +39,7 @@ export function WidgetFullPanel({
   onCollapse,
   onCloseQuickAdd,
 }: FullPanelProps) {
+  useI18n();
   // 排序只依赖任务；统计随共享时钟更新，保证截止秒数与倒计时一致。
   const pendingSorted = useMemo(
     () => sortTasks(tasks.filter((task) => task.status === "pending"), "due_asc", 0),
@@ -45,8 +47,7 @@ export function WidgetFullPanel({
   );
   const stats = useMemo(() => computeStats(tasks, now), [tasks, now]);
 
-  const today = new Date(now);
-  const dateText = `${today.getMonth() + 1}月${today.getDate()}日 周${"日一二三四五六"[today.getDay()]}`;
+  const dateText = widgetDate(now);
 
   return (
     <div className="glass-panel native-window-surface flex h-full w-full flex-col overflow-hidden">
@@ -81,8 +82,8 @@ export function WidgetCollapsedBar({
   onExpand: () => void;
   onAdd: () => void;
 }) {
-  const today = new Date(now);
-  const dateText = `${today.getMonth() + 1}月${today.getDate()}日 周${"日一二三四五六"[today.getDay()]}`;
+  useI18n();
+  const dateText = widgetDate(now);
 
   return (
     <div className="glass-panel native-window-surface flex h-full w-full flex-col overflow-hidden">

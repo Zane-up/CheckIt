@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n";
 /**
  * 提醒提前量选择器：预设标签 + 自定义输入行（数值 + 单位 + 添加）。
  *
@@ -12,7 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import {
   REMINDER_PRESETS,
   normalizeOffsets,
@@ -24,18 +25,6 @@ import {
 } from "@/utils/reminders";
 import { Button } from "@/components/ui/Buttons";
 
-const UNIT_OPTIONS: { value: ReminderUnit; label: string }[] = [
-  { value: "minute", label: t.task.reminderUnitMinute },
-  { value: "hour", label: t.task.reminderUnitHour },
-  { value: "day", label: t.task.reminderUnitDay },
-];
-
-const ERROR_TEXT: Record<ReminderParseError, string> = {
-  required: t.errors.reminderAmountRequired,
-  invalid: t.errors.reminderAmountInvalid,
-  zero: t.errors.reminderAmountZero,
-  tooLarge: t.errors.reminderAmountTooLarge,
-};
 
 interface ReminderPickerProps {
   /** 当前选中的提前秒数集合（受控；0 = 截止时） */
@@ -56,6 +45,20 @@ export function ReminderPicker({
   disabledHint,
   onDraftChange,
 }: ReminderPickerProps) {
+  useI18n();
+const UNIT_OPTIONS: { value: ReminderUnit; label: string }[] = [
+  { value: "minute", label: t.task.reminderUnitMinute },
+  { value: "hour", label: t.task.reminderUnitHour },
+  { value: "day", label: t.task.reminderUnitDay },
+];
+
+const ERROR_TEXT: Record<ReminderParseError, string> = {
+  required: t.errors.reminderAmountRequired,
+  invalid: t.errors.reminderAmountInvalid,
+  zero: t.errors.reminderAmountZero,
+  tooLarge: t.errors.reminderAmountTooLarge,
+};
+
   const [amount, setAmount] = useState("");
   const [unit, setUnit] = useState<ReminderUnit>("minute");
   const [error, setError] = useState<ReminderParseError | null>(null);

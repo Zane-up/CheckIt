@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
       mocks.updateTask.mockClear();
       mocks.deleteTask.mockClear();
       mocks.settings = {
+        language: "zh-CN",
         theme: "dark",
         glass_enabled: true,
         glass_opacity: 0.35,

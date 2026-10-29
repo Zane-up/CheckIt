@@ -1,3 +1,4 @@
+import { tr } from "@/i18n";
 /**
  * CheckIt 前端共享类型定义。
  * 与 Rust 侧 models 中的 serde 结构一一对应（snake_case 字段）。
@@ -36,6 +37,7 @@ export interface Task {
 }
 
 export interface AppSettings {
+  language: "zh-CN" | "en";
   theme: ThemeMode;
   glass_enabled: boolean;
   /** 玻璃面板底色不透明度 0.05 ~ 0.6 */
@@ -86,7 +88,7 @@ export const PRIORITY_ORDER: Record<Priority, number> = {
 };
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
-  high: "高",
-  medium: "中",
-  low: "低",
+  get high() { return tr("高"); },
+  get medium() { return tr("中"); },
+  get low() { return tr("低"); },
 };

@@ -25,6 +25,7 @@ let unlistenCalls: string[];
 
 function baseSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
+    language: "zh-CN",
     theme: "dark",
     glass_enabled: true,
     glass_opacity: 0.35,

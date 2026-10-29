@@ -1,10 +1,11 @@
+import { useI18n } from "@/i18n";
 /**
  * 悬浮窗底部：今日完成进度 + 打开管理窗口入口。
  */
 
 import { ExternalLink } from "lucide-react";
 import type { TaskStats } from "@/utils/tasks";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import { api } from "@/services/api";
 
 interface WidgetFooterProps {
@@ -12,6 +13,7 @@ interface WidgetFooterProps {
 }
 
 export default function WidgetFooter({ stats }: WidgetFooterProps) {
+  useI18n();
   const done = stats.completedToday;
   const total = stats.dueTotalToday + done;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;

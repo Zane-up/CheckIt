@@ -1,3 +1,4 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 倒计时徽章：根据剩余时间展示不同文本与紧急颜色。
  * 由父组件传入 now（全局共享时钟），本组件自身不建定时器。
@@ -22,14 +23,15 @@ const URGENCY_COLOR: Record<Urgency, string> = {
 };
 
 export default function CountdownBadge({ dueAt, now, completed }: CountdownBadgeProps) {
+  useI18n();
   if (!dueAt) {
-    return <span className="whitespace-nowrap text-[11px] text-[var(--text-muted)]">无截止</span>;
+    return <span className="whitespace-nowrap text-[11px] text-[var(--text-muted)]">{tr("无截止")}</span>;
   }
   const cd = computeCountdown(dueAt, now);
   if (!cd) return null;
 
   if (completed) {
-    return <span className="whitespace-nowrap text-[11px] text-[var(--text-muted)]">已完成</span>;
+    return <span className="whitespace-nowrap text-[11px] text-[var(--text-muted)]">{tr("已完成")}</span>;
   }
 
   const color = URGENCY_COLOR[cd.urgency];

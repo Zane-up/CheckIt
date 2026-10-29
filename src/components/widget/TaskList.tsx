@@ -1,3 +1,4 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 悬浮窗任务列表：显示最近即将截止的任务，支持滚动。
  * 列表项为共享的 TaskListItem（管理窗口复用）。
@@ -5,7 +6,7 @@
 
 import { Inbox } from "lucide-react";
 import type { Task } from "@/types";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import TaskListItem from "@/components/shared/TaskListItem";
 
 interface TaskListProps {
@@ -15,6 +16,7 @@ interface TaskListProps {
 }
 
 export default function TaskList({ tasks, displayCount, now }: TaskListProps) {
+  useI18n();
   const shown = tasks.slice(0, Math.max(1, displayCount));
 
   return (
@@ -34,8 +36,7 @@ export default function TaskList({ tasks, displayCount, now }: TaskListProps) {
       )}
       {tasks.length > shown.length && (
         <div className="pb-1.5 pt-0.5 text-center text-[11px] text-[var(--text-secondary)]">
-          还有 {tasks.length - shown.length} 个任务
-        </div>
+          {tr("还有 {0} 个任务", tasks.length - shown.length)}</div>
       )}
     </div>
   );

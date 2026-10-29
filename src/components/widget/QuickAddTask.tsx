@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n";
 /**
  * 快速添加任务：悬浮窗内联面板。
  * - 截止预设用本地日历语义（今天/明天在深夜调用也不会跨错日期）
@@ -8,7 +9,7 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAppData } from "@/hooks/useAppData";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import {
   calendarTodayAt,
   calendarTomorrowAt,
@@ -47,6 +48,7 @@ function presetTomorrow(now: number): string {
 }
 
 export default function QuickAddTask({ onClose, defaultOffsets, draft, onDraftChange }: QuickAddTaskProps) {
+  useI18n();
   const { createTask } = useAppData();
   // 草稿由 WidgetApp 持有，切换圆圈/收起模式卸载此组件时仍保留。
   const { title, dueInput } = draft;

@@ -1,3 +1,4 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 贴边收纳球：40 逻辑像素的圆形窗口，显示全部 pending 任务数。
  *
@@ -25,6 +26,7 @@ interface DockBubbleProps {
 }
 
 export default function DockBubble({ tasks, onExpand, error }: DockBubbleProps) {
+  useI18n();
   const pressStart = useRef<{ x: number; y: number } | null>(null);
   const dragged = useRef(false);
   const nativeDragStarted = useRef(false);
@@ -87,7 +89,7 @@ export default function DockBubble({ tasks, onExpand, error }: DockBubbleProps) 
     <button
       type="button"
       data-testid="dock-bubble"
-      title={error ? `${error} 点击重试。` : bubbleTooltip(pendingCount)}
+      title={error ? tr("{0} 点击重试。", error) : bubbleTooltip(pendingCount)}
       aria-label={bubbleTooltip(pendingCount)}
       onClick={onClick}
       onPointerDown={onPointerDown}

@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n";
 /**
  * 应用数据上下文：任务 / 分类 / 设置 的唯一数据源。
  *
@@ -11,6 +12,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -19,6 +21,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { api, type DataChangedPayload } from "@/services/api";
 import type { AppSettings, AppState, Category, TaskInput } from "@/types";
+import { setLanguage } from "@/i18n";
 
 interface AppDataValue {
   state: AppState;
@@ -49,6 +52,7 @@ const EMPTY_STATE: AppState = {
   tasks: [],
   categories: [],
   settings: {
+    language: "zh-CN",
     theme: "dark",
     glass_enabled: true,
     glass_opacity: 0.35,
@@ -64,7 +68,9 @@ const EMPTY_STATE: AppState = {
 };
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
+  useI18n();
   const [state, setState] = useState<AppState>(EMPTY_STATE);
+  useLayoutEffect(() => { setLanguage(state.settings.language); }, [state.settings.language]);
   const [loading, setLoading] = useState(true);
   const [hasData, setHasData] = useState(false);
   const [error, setError] = useState<string | null>(null);

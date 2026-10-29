@@ -10,6 +10,18 @@ use tauri::{AppHandle, Emitter, Manager};
 /// 置顶菜单项（托管状态：点击后同步勾选）
 pub struct TrayPinItem(pub std::sync::Mutex<Option<CheckMenuItem<tauri::Wry>>>);
 
+struct TrayTexts { items: Vec<(MenuItem<tauri::Wry>, &'static str, &'static str)>, pin: CheckMenuItem<tauri::Wry> }
+
+pub fn sync_language(app: &AppHandle, language: &str) {
+    let english=language=="en";
+    if let Some(texts)=app.try_state::<TrayTexts>() {
+        for (item,zh,en) in &texts.items { let _=item.set_text(if english {*en} else {*zh}); }
+        let _=texts.pin.set_text(if english {"Always on top"} else {"窗口置顶"});
+    }
+    if let Some(w)=app.get_webview_window("manager") {let _=w.set_title(if english {"CheckIt - Task manager"} else {"CheckIt - 任务管理"});}
+    if let Some(w)=app.get_webview_window("reminder") {let _=w.set_title(if english {"CheckIt - Task reminders"} else {"CheckIt · 任务提醒"});}
+}
+
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open", "打开 CheckIt", true, None::<&str>)?;
     let add_item = MenuItem::with_id(app, "add", "添加任务", true, None::<&str>)?;
@@ -67,6 +79,8 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     }
 
     builder.build(app)?;
+    app.manage(TrayTexts {items:vec![(open_item,"打开 CheckIt","Open CheckIt"),(add_item,"添加任务","Add task"),(manager_item,"任务管理","Task manager"),(settings_item,"设置","Settings"),(quit_item,"退出 CheckIt","Quit CheckIt")],pin:pin_item});
+    if let Ok(settings)=app.state::<crate::commands::CheckItState>().db.load_settings(){sync_language(app,&settings.language);}
     Ok(())
 }
 

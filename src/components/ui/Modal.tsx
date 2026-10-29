@@ -1,3 +1,4 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 居中模态框（管理窗口使用），支持 Esc 关闭。
  */
@@ -15,6 +16,7 @@ interface ModalProps {
 }
 
 export function Modal({ open, title, onClose, children, width = 480 }: ModalProps) {
+  useI18n();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -39,7 +41,7 @@ export function Modal({ open, title, onClose, children, width = 480 }: ModalProp
       >
         <div className="flex items-center justify-between border-b border-[var(--glass-border)] px-5 py-3">
           <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{title}</h2>
-          <IconButton title="关闭" onClick={onClose}>
+          <IconButton title={tr("关闭")} onClick={onClose}>
             <X size={15} />
           </IconButton>
         </div>

@@ -97,6 +97,7 @@ pub fn update_settings(app: AppHandle, state: tauri::State<CheckItState>, patch:
     // 系统窗口/托盘调用位于数据库提交之后；失败只记录，不回滚已提交的设置，
     // 避免出现"数据库成功但前端收到失败并回滚"的假失败。下次应用启动会重新应用。
     crate::windows::apply_window_behaviors(&app, &updated);
+    crate::tray::sync_language(&app, &updated.language);
 
     broadcast(&app, "settings");
     Ok(updated)

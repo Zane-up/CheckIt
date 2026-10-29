@@ -1,10 +1,11 @@
+import { useI18n } from "@/i18n";
 /**
  * 任务列表项：悬浮窗与管理窗口共用。
  * compact 模式用于悬浮窗（更紧凑，点击不展开详情）。
  */
 
 import { useAppData } from "@/hooks/useAppData";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import type { Task } from "@/types";
 import { Checkbox } from "@/components/ui/Checkbox";
 import CountdownBadge from "@/components/shared/CountdownBadge";
@@ -18,6 +19,7 @@ interface TaskListItemProps {
 }
 
 export default function TaskListItem({ task, now, compact = false, onEdit }: TaskListItemProps) {
+  useI18n();
   const { state, setTaskStatus } = useAppData();
   const category = task.category_id !== null
     ? state.categories.find((c) => c.id === task.category_id)

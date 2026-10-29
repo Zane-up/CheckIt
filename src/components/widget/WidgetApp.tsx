@@ -1,3 +1,4 @@
+import { tr, useI18n } from "@/i18n";
 /**
  * 桌面悬浮小组件（主界面）。
  *
@@ -27,6 +28,7 @@ import type { QuickAddDraft } from "@/components/widget/QuickAddTask";
 export const QUICK_ADD_MIN_H = 320;
 
 export default function WidgetApp() {
+  useI18n();
   const { state } = useAppData();
   const now = useNow();
   const [mode, setMode] = useState<WidgetMode>("expanded");
@@ -73,7 +75,7 @@ export default function WidgetApp() {
       } catch (e) {
         console.error("窗口操作失败", e);
         if (mounted.current && seq === requestSeq.current) {
-          setWindowError("窗口操作失败，请重试，或通过托盘重新打开窗口。");
+          setWindowError(tr("窗口操作失败，请重试，或通过托盘重新打开窗口。"));
           // 不渲染与原生尺寸不符的假面板；关闭失败则保留添加入口供再次关闭重试。
           if (kind === "close" && modeRef.current === "expanded") setQuickAddOpen(true);
         }
@@ -113,7 +115,7 @@ export default function WidgetApp() {
         if (!destroyed && version === modeVersion.current && seq === requestSeq.current) applyMode(result);
       } catch (e) {
         console.error("读取窗口模式失败", e);
-        if (!destroyed) setWindowError("读取窗口模式失败，请通过托盘重新打开窗口。");
+        if (!destroyed) setWindowError(tr("读取窗口模式失败，请通过托盘重新打开窗口。"));
       }
     })();
     return () => { destroyed = true; unlisten?.(); };
@@ -157,7 +159,7 @@ export default function WidgetApp() {
       {windowError && (
         <div role="alert" className="fixed inset-x-3 bottom-12 z-50 rounded-lg bg-[var(--surface-overlay)] p-2 text-sm text-[var(--text-primary)] shadow-lg">
           {windowError}
-          <button type="button" onClick={() => setWindowError(null)} className="ml-2 underline">关闭提示</button>
+          <button type="button" onClick={() => setWindowError(null)} className="ml-2 underline">{tr("关闭提示")}</button>
         </div>
       )}
       <WidgetFullPanel

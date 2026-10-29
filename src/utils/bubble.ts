@@ -1,3 +1,4 @@
+import { tr } from "@/i18n";
 /**
  * 贴边圆圈计数格式化。
  *
@@ -18,5 +19,5 @@ export function formatBubbleCount(count: number): string {
 /** 圆圈 tooltip：显示完整数量（不做 99+ 截断） */
 export function bubbleTooltip(count: number): string {
   const n = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
-  return n === 0 ? "暂无待办任务" : `${n} 个待办任务`;
+  return n === 0 ? tr("暂无待办任务") : tr("{0} 个待办任务", n);
 }

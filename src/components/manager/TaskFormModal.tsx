@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n";
 /**
  * 任务新建 / 编辑表单：标题、描述、分类、优先级、截止时间、多级提醒。
  *
@@ -12,7 +13,7 @@
 import { useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useAppData } from "@/hooks/useAppData";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import type { Priority, Task, TaskInput } from "@/types";
 import { localInputToUtcIso, utcIsoToLocalInput } from "@/utils/time";
 import { Modal } from "@/components/ui/Modal";
@@ -28,6 +29,7 @@ interface TaskFormModalProps {
 const PRIORITIES: Priority[] = ["high", "medium", "low"];
 
 export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
+  useI18n();
   const { state, createTask, updateTask, deleteTask } = useAppData();
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");

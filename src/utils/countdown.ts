@@ -1,3 +1,4 @@
+import { tr } from "@/i18n";
 /**
  * 倒计时核心模块（纯函数，可测试）。
  *
@@ -36,24 +37,24 @@ export function formatRemaining(totalMs: number): string {
   const totalSeconds = Math.floor(abs / 1000);
 
   if (totalSeconds < 60) {
-    return `${totalSeconds}秒`;
+    return tr("{0}秒", totalSeconds);
   }
 
   const totalMinutes = Math.floor(totalSeconds / 60);
   if (totalMinutes < 60) {
     const secs = totalSeconds % 60;
-    return `${totalMinutes}分钟 ${secs}秒`;
+    return tr("{0}分钟 {1}秒", totalMinutes, secs);
   }
 
   const totalHours = Math.floor(totalMinutes / 60);
   if (totalHours < 24) {
     const mins = totalMinutes % 60;
-    return `${totalHours}小时 ${mins}分钟`;
+    return tr("{0}小时 {1}分钟", totalHours, mins);
   }
 
   const days = Math.floor(totalHours / 24);
   const hours = totalHours % 24;
-  return `${days}天 ${hours}小时`;
+  return tr("{0}天 {1}小时", days, hours);
 }
 
 /**
@@ -83,7 +84,7 @@ export function computeCountdown(dueAt: string | null, now: number): CountdownRe
   return {
     totalMs,
     overdue,
-    text: overdue ? `逾期 ${formatRemaining(totalMs)}` : formatRemaining(totalMs),
+    text: overdue ? tr("逾期 {0}", formatRemaining(totalMs)) : formatRemaining(totalMs),
     urgency,
   };
 }

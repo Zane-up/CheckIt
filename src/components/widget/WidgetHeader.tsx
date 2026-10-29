@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n";
 /**
  * 悬浮窗标题栏：Logo + 日期 + 快捷操作。
  * 整个标题栏是拖动区域（data-tauri-drag-region）。
@@ -6,7 +7,7 @@
 import { CheckSquare, ChevronDown, ChevronUp, MoreHorizontal, PanelTop, Plus } from "lucide-react";
 import { useState } from "react";
 import { IconButton } from "@/components/ui/Buttons";
-import { t } from "@/i18n/zh";
+import { t } from "@/i18n";
 import { api } from "@/services/api";
 import MoreMenu from "@/components/widget/MoreMenu";
 
@@ -18,6 +19,7 @@ interface WidgetHeaderProps {
 }
 
 export default function WidgetHeader({ dateText, onAdd, onToggleCollapse, collapsed }: WidgetHeaderProps) {
+  useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (

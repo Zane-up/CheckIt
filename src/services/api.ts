@@ -4,6 +4,7 @@
  */
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { errorText } from "@/i18n";
 import type { AppState, AppSettings, Category, Task, TaskInput } from "@/types";
 
 async function invoke<T>(cmd: string, payload?: Record<string, unknown>): Promise<T> {
@@ -11,7 +12,7 @@ async function invoke<T>(cmd: string, payload?: Record<string, unknown>): Promis
     return (await tauriInvoke(cmd, payload)) as T;
   } catch (e) {
     // Rust 侧返回的 Err 为字符串，保持原样向上抛出
-    throw e instanceof Error ? e : new Error(String(e));
+    throw new Error(errorText(e));
   }
 }
 

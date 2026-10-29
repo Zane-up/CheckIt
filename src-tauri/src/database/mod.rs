@@ -715,6 +715,7 @@ impl Database {
         for row in rows {
             let (key, value) = row?;
             match key.as_str() {
+                "language" => settings.language = value,
                 "theme" => settings.theme = value,
                 "glass_enabled" => settings.glass_enabled = value == "true",
                 "glass_opacity" => {
@@ -752,7 +753,8 @@ impl Database {
     /// 写入全部设置键（调用方必须已处于事务中并由其提交/回滚）。
     fn save_settings_inner(conn: &Connection, settings: &AppSettings) -> DbResult<()> {
         let s = settings.clone().sanitized();
-        let entries: [(&str, String); 11] = [
+        let entries: [(&str, String); 12] = [
+            ("language", s.language.clone()),
             ("theme", s.theme.clone()),
             ("glass_enabled", s.glass_enabled.to_string()),
             ("glass_opacity", s.glass_opacity.to_string()),
