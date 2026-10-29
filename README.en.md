@@ -31,6 +31,8 @@ Under **Settings → Local backup and restore**, select **Back up now**. **Open 
 
 Restoring replaces current tasks, categories, settings and reminder history, then restarts CheckIt. A safety backup is created before restoring and before database schema upgrades. If this backup fails, the operation is stopped. Backups are local and are not uploaded automatically.
 
+Reminder cards support completing a single task, snoozing it, or opening its details. Opening details acknowledges that reminder after requesting navigation. Any existing editor draft is kept until you close the editor, then navigation continues.
+
 ## Development
 
 Requires Node.js 22.12 or later, stable Rust with the MSVC toolchain, and Visual Studio C++ Build Tools with a Windows SDK.

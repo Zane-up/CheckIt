@@ -1,5 +1,15 @@
 # RELEASE — 发布说明与流程
 
+## 当前发布流程（v0.5.0 起）
+
+仅使用 `.github/workflows/ci.yml`。主分支推送和 PR 执行检查；主分支推送另构建安装包，版本标签推送则在前端、Rust 检查和构建全部通过后自动公开 Release。
+
+发布步骤：更新 package.json、package-lock.json、Cargo.toml、Cargo.lock、tauri.conf.json 中的应用版本，补充 CHANGELOG 对应版本，提交源码并推送 main；验收通过后创建并推送同一提交的 `vX.Y.Z` 标签。不要提前使用 `gh release create` 或网页创建 Release，也无需取消任何重复发布任务。
+
+发布任务从同一流水线下载安装包，核对标签和应用版本，生成 SHA256SUMS.txt，提取更新日志，上传成功后公开发布。任何检查失败都不会进入发布步骤；任务失败可在修复后按实际提交重新发版，不替换已公开的版本文件。
+
+以下记录为历史版本验收，不代表当前版本的验收状态。
+
 ## 版本策略
 
 语义化版本（MAJOR.MINOR.PATCH）。当前：v0.1.0。

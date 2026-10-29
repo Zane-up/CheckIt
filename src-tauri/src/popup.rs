@@ -159,3 +159,14 @@ pub async fn snooze_popup_reminders(app: AppHandle, ids: Vec<i64>, minutes: i64)
     *preview = false;
     refresh_locked(&app, false)
 }
+
+#[tauri::command]
+pub async fn complete_popup_reminder(app:AppHandle,id:i64)->Result<(),String>{
+    let state=app.state::<PopupState>();let preview=state.0.lock();
+    app.state::<CheckItState>().db.complete_popup_task(id).map_err(|e|e.to_string())?;
+    let _=app.emit("data-changed",serde_json::json!({"entity":"tasks"}));
+    let _=app.state::<CheckItState>().wake.lock().send(());
+    // 任务提交后，窗口刷新失败不能把已成功完成的任务报告为失败。
+    if let Err(e)=refresh_locked(&app,*preview){log::warn!("Refresh after completing popup task: {e}");}
+    Ok(())
+}

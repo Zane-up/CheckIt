@@ -1,5 +1,8 @@
 /** Application-owned text only. Task titles, notes and category names are never translated. */
 export const en: Record<string, string> = {
+  "该任务已不存在，请刷新任务列表。":"This task no longer exists. Refresh the task list.",
+  "请先完成或关闭当前编辑，随后将打开请求的页面。":"Finish or close the current editor to continue to the requested page.",
+  "取消跳转":"Cancel navigation", "完成任务":"Complete task", "稍后 {0} 分钟":"Snooze {0} min", "查看详情":"View details",
   "全部稍后 {0} 分钟":"Snooze all for {0} min",
   "还有 {0} 个任务":"{0} more tasks",
   "添加任务":"Add task", "打开任务管理":"Open task manager", "设置":"Settings", "窗口置顶":"Always on top",

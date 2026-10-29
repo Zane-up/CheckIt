@@ -24,11 +24,12 @@ interface TaskFormModalProps {
   /** null = 新建 */
   task: Task | null;
   onClose: () => void;
+  notice?: React.ReactNode;
 }
 
 const PRIORITIES: Priority[] = ["high", "medium", "low"];
 
-export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
+export default function TaskFormModal({ task, onClose, notice }: TaskFormModalProps) {
   useI18n();
   const { state, createTask, updateTask, deleteTask } = useAppData();
   const [title, setTitle] = useState(task?.title ?? "");
@@ -108,6 +109,7 @@ export default function TaskFormModal({ task, onClose }: TaskFormModalProps) {
   return (
     <Modal open title={task ? t.task.edit : t.task.create} onClose={onClose} width={520}>
       <div className="flex flex-col gap-3.5">
+        {notice}
         <div>
           <label className="mb-1 block text-[12px] font-medium text-[var(--text-secondary)]">{t.task.title} *</label>
           <input

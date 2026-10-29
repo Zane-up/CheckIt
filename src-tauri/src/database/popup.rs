@@ -113,6 +113,22 @@ mod tests {
     }
 
     #[test]
+    fn completing_one_popup_preserves_other_tasks_and_invalidated_popup_cannot_complete() {
+        let db=Database::open_in_memory().unwrap();
+        let first=enqueue(&db,"第一项");let second=enqueue(&db,"第二项");
+        let id=db.list_popup_reminders().unwrap().iter().find(|r|r.task_id==first.task_id).unwrap().id;
+        db.complete_popup_task(id).unwrap();
+        assert_eq!(db.get_task(first.task_id).unwrap().status,TaskStatus::Completed);
+        assert_eq!(db.list_popup_reminders().unwrap().len(),1);
+        assert_eq!(db.list_popup_reminders().unwrap()[0].task_id,second.task_id);
+        let stale=db.list_popup_reminders().unwrap()[0].id;
+        let mut changed=input();changed.due_at=Some("2030-01-02T00:00:00Z".into());
+        db.update_task(second.task_id,&changed).unwrap();
+        assert!(db.complete_popup_task(stale).is_err());
+        assert_eq!(db.get_task(second.task_id).unwrap().status,TaskStatus::Pending);
+    }
+
+    #[test]
     fn snooze_survives_restart_and_resume_and_invalidated_task_stays_hidden() {
         let dir = tempfile::tempdir().unwrap();
         let path=dir.path().join("test.db");
@@ -212,6 +228,18 @@ mod tests {
 }
 
 impl Database {
+    /// 仅完成仍对应当前有效提醒的任务；校验与修改在同一事务内，防止旧提醒误完成改期任务。
+    pub fn complete_popup_task(&self, id:i64) -> DbResult<()> {
+        let mut conn=self.conn.lock();let tx=conn.transaction()?;
+        let task_id:i64=tx.query_row("SELECT t.id FROM popup_reminders p
+          JOIN reminder_events e ON e.id=p.event_id JOIN tasks t ON t.id=e.task_id
+          JOIN reminders r ON r.task_id=t.id AND r.offset_seconds=e.offset_seconds
+          WHERE p.event_id=?1 AND p.dismissed=0 AND t.status='pending' AND t.due_at=e.due_at_snapshot",[id],|r|r.get(0))?;
+        let now=now_iso();
+        tx.execute("UPDATE tasks SET status='completed', completed_at=?2, updated_at=?2 WHERE id=?1",rusqlite::params![task_id,now])?;
+        tx.execute("UPDATE popup_reminders SET dismissed=1 WHERE event_id IN (SELECT id FROM reminder_events WHERE task_id=?1)",[task_id])?;
+        tx.commit()?;Ok(())
+    }
     /// 同一事件只入箱一次；确认过的事件重试时不能重新弹出。
     pub fn enqueue_popup(
         &self,

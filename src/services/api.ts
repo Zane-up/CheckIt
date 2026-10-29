@@ -17,6 +17,11 @@ async function invoke<T>(cmd: string, payload?: Record<string, unknown>): Promis
 }
 
 export const api = {
+  openSettings: () => invoke<void>("open_manager_target", {target:{view:"settings"}}),
+  openTask: (taskId: number) => invoke<void>("open_manager_target", {target:{view:"task",task_id:taskId}}),
+  getManagerNavigation: () => invoke<ManagerNavigationRequest | null>("get_manager_navigation"),
+  acknowledgeManagerNavigation: (id:number) => invoke<void>("acknowledge_manager_navigation", {id}),
+  completePopupReminder: (id: number) => invoke<void>("complete_popup_reminder", {id}),
   createBackup: () => invoke<string>("create_backup"),
   listBackups: () => invoke<{ name: string; bytes: number }[]>("list_backups"),
   restoreBackup: (name: string) => invoke<void>("restore_backup", { name }),
@@ -83,6 +88,10 @@ export const api = {
 };
 
 export type WidgetMode = "expanded" | "collapsed" | "docked";
+export interface ManagerNavigationRequest {
+  id: number;
+  target: {view:"settings"} | {view:"task";task_id:number};
+}
 
 export interface PopupReminder {
   id: number;

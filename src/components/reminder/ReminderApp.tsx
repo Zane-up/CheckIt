@@ -14,6 +14,9 @@ export default function ReminderApp() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const sequence = useRef(0);
+  const actionLock=useRef(false);
+  const reloadRef=useRef<()=>Promise<void>>(async()=>{});
+  const [readError,setReadError]=useState<string|null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -24,38 +27,47 @@ export default function ReminderApp() {
         const next = await api.getPopupReminders();
         if (!disposed && request === sequence.current) {
           setSnapshot(next);
-          setError(null);
+          setReadError(null);
         }
       } catch (e) {
-        if (!disposed && request === sequence.current) setError(String(e));
+        if (!disposed && request === sequence.current) setReadError(String(e));
       }
     };
     void listen("popup-reminders-changed", () => void reload()).then((stop) => {
       if (disposed) stop();
       else { unlisten = stop; void reload(); }
     }).catch(() => { if (!disposed) void reload(); });
+    reloadRef.current=reload;
     void reload();
     const timer = window.setInterval(() => void reload(), 3000);
     return () => { disposed = true; unlisten?.(); window.clearInterval(timer); };
   }, []);
 
   const dismiss = useCallback(async () => {
-    if (busy) return;
+    if (actionLock.current) return;
+    actionLock.current=true;
     setBusy(true);
     setError(null);
     try {
       // 只确认当前展示的提醒，点击期间新到达的消息会留在窗口里。
       await api.dismissPopupReminders(snapshot.reminders.map((r) => r.id));
     } catch (e) { setError(String(e)); }
-    finally { setBusy(false); }
+    finally { actionLock.current=false;setBusy(false); }
   }, [busy, snapshot]);
 
-  async function snooze(minutes: number) {
-    if (busy || snapshot.reminders.length === 0) return;
+  async function snooze(minutes: number, id?:number) {
+    if (actionLock.current || snapshot.reminders.length === 0) return;
+    actionLock.current=true;
     setBusy(true); setError(null);
-    try { await api.snoozePopupReminders(snapshot.reminders.map(r => r.id), minutes); }
+    try { await api.snoozePopupReminders(id === undefined ? snapshot.reminders.map(r => r.id) : [id], minutes); await reloadRef.current(); }
     catch(e) { setError(String(e)); }
-    finally { setBusy(false); }
+    finally { actionLock.current=false;setBusy(false); }
+  }
+
+  async function itemAction(operation:()=>Promise<void>) {
+    if(actionLock.current)return;actionLock.current=true;setBusy(true);setError(null);
+    try{await operation();await reloadRef.current();}catch(e){setError(String(e));}
+    finally{actionLock.current=false;setBusy(false);}
   }
 
   useEffect(() => {
@@ -93,11 +105,16 @@ export default function ReminderApp() {
               {countdown ? countdown.overdue ? countdown.text : tr("距离截止还有 {0}", countdown.text) : item.body}
             </p>
             <p className="mt-1 text-xs text-[var(--text-muted)]">{tr("截止时间：")}{new Date(item.due_at).toLocaleString(dateLocale(), { hour12: false })}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" disabled={busy} onClick={()=>void itemAction(()=>api.completePopupReminder(item.id))} className="rounded-lg bg-[var(--btn-primary-bg)] px-3 py-1.5 text-xs text-[var(--btn-primary-text)] disabled:opacity-50">{tr("完成任务")}</button>
+              {[5,10].map(minutes=><button key={minutes} type="button" disabled={busy} onClick={()=>void snooze(minutes,item.id)} className="rounded-lg border border-[var(--glass-border)] px-2 py-1.5 text-xs disabled:opacity-50">{tr("稍后 {0} 分钟",minutes)}</button>)}
+              <button type="button" disabled={busy} onClick={()=>void itemAction(async()=>{await api.openTask(item.task_id);await api.dismissPopupReminders([item.id]);})} className="px-1 text-xs text-[var(--accent-text)] disabled:opacity-50">{tr("查看详情")}</button>
+            </div>
           </article>
           );
         })}
-        {error && <p role="alert" className="break-words text-xs text-[var(--urgent-text)]">{tr("提醒读取或确认失败：")}{error}</p>}
-        {!snapshot.preview && snapshot.reminders.length === 0 && !error && <p className="text-sm text-[var(--text-secondary)]">{tr("正在读取提醒…")}</p>}
+        {(error || readError) && <p role="alert" className="break-words text-xs text-[var(--urgent-text)]">{tr("提醒读取或确认失败：")}{error || readError}</p>}
+        {!snapshot.preview && snapshot.reminders.length === 0 && !error && !readError && <p className="text-sm text-[var(--text-secondary)]">{tr("正在读取提醒…")}</p>}
       </div>
       <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[var(--glass-border)] px-5 py-3">
         {snapshot.reminders.length > 0 && <div className="flex w-full gap-2">

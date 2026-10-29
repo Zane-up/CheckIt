@@ -1,6 +1,7 @@
 //! CheckIt 库入口：组装数据库、调度器、托盘与命令。
 
 pub mod commands;
+mod navigation;
 mod updates;
 mod backups;
 pub mod database;
@@ -186,6 +187,7 @@ pub fn run() {
                 db: db.clone(),
                 wake: parking_lot::Mutex::new(wake_tx),
             });
+            app.manage(navigation::ManagerNavigation::default());
 
             // 开机启动对账（以系统实际状态修正本地记录，不执行系统写入）
             let settings =
@@ -215,6 +217,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
+            navigation::open_manager_target,
+            navigation::get_manager_navigation,
+            navigation::acknowledge_manager_navigation,
+            popup::complete_popup_reminder,
             updates::open_release_page,
             backups::create_backup,
             backups::list_backups,

@@ -11,8 +11,11 @@ const mocks = vi.hoisted(() => ({
   dismiss: vi.fn(async (_ids: number[]) => {}),
   snooze: vi.fn(async (_ids: number[], _minutes: number) => {}),
   manager: vi.fn(async () => {}),
+  complete: vi.fn(async (_id:number)=>{}),
+  task: vi.fn(async (_id:number)=>{}),
 }));
 vi.mock("@/services/api", () => ({ api: {
+  completePopupReminder:mocks.complete,openTask:mocks.task,
   snoozePopupReminders: mocks.snooze, getPopupReminders: mocks.get, dismissPopupReminders: mocks.dismiss, openManager: mocks.manager,
 } }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (_event: string, handler: () => void) => {
@@ -28,10 +31,29 @@ beforeEach(() => {
   mocks.get.mockReset().mockImplementation(async () => structuredClone(mocks.snapshot));
   mocks.dismiss.mockReset().mockResolvedValue(undefined);
   mocks.stop.mockClear(); mocks.handler = null;
+  mocks.complete.mockReset().mockResolvedValue(undefined);mocks.task.mockReset().mockResolvedValue(undefined);mocks.snooze.mockClear();
 });
 afterEach(() => { vi.useRealTimers(); });
 
 describe("居中提醒窗口", () => {
+  it("单条完成和稍后仅操作当前提醒",async()=>{
+    mocks.snapshot={reminders:[item(1),item(2)],preview:false};render(<ReminderApp/>);
+    await screen.findByText("待办 2");
+    fireEvent.click(screen.getAllByRole("button",{name:"完成任务"})[0]);
+    expect(mocks.complete).toHaveBeenCalledWith(1);
+    await act(async()=>{await Promise.resolve();});
+    fireEvent.click(screen.getAllByRole("button",{name:"稍后 10 分钟"})[1]);
+    expect(mocks.snooze).toHaveBeenCalledWith([2],10);
+  });
+  it("打开详情成功后仅确认该条，打开失败不确认",async()=>{
+    render(<ReminderApp/>);await screen.findByText("待办 1");
+    mocks.task.mockRejectedValueOnce(new Error("not found"));
+    fireEvent.click(screen.getByText("查看详情"));await screen.findByRole("alert");
+    expect(mocks.dismiss).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("查看详情"));
+    await act(async()=>{await Promise.resolve();});
+    expect(mocks.task).toHaveBeenCalledWith(1);expect(mocks.dismiss).toHaveBeenCalledWith([1]);
+  });
   it("稍后提醒仅传送当前可见快照，不误清新消息", async () => {
     render(<ReminderApp />); await screen.findByText("待办 1");
     mocks.snapshot = { reminders: [item(1), item(2)], preview: false };

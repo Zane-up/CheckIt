@@ -49,7 +49,7 @@ export default function MoreMenu({ onClose }: MoreMenuProps) {
     {
       icon: Settings,
       label: t.widget.settings,
-      action: () => void api.openManager(),
+      action: () => void api.openSettings(),
     },
   ];
 

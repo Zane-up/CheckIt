@@ -114,7 +114,7 @@ fn handle_menu(app: &AppHandle, id: &str) {
         "settings" => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::windows::open_manager(&app) {
+                if let Err(e) = crate::navigation::open_target(&app, crate::navigation::ManagerTarget::Settings) {
                     log::error!("打开管理窗口失败: {e}");
                 }
             });

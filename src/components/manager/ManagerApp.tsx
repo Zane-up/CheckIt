@@ -1,10 +1,12 @@
-import { useI18n } from "@/i18n";
+import { tr, useI18n } from "@/i18n";
 /**
  * 完整任务管理窗口：左侧导航 + 主内容区。
  * 视图：全部 / 今日 / 未来 7 天 / 已逾期 / 已完成 / 分类 / 设置。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useManagerNavigation } from "@/hooks/useManagerNavigation";
+import { api } from "@/services/api";
 import {
   CalendarDays,
   CheckCircle2,
@@ -43,6 +45,26 @@ export default function ManagerApp() {
   const [sortKey, setSortKey] = useState<SortKey>("due_asc");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
+  const {request,clearRequest}=useManagerNavigation();
+  const navigationHandled=useRef(0);
+  const [navigationError,setNavigationError]=useState("");
+  useEffect(()=>{
+    if(!request || creating || editingTask || request.id<=navigationHandled.current)return;
+    let cancelled=false;
+    if(request.target.view==="settings"){
+      navigationHandled.current=request.id;setNavigationError("");setView({kind:"settings"});clearRequest(request.id);
+    }else{
+      const taskId=request.target.task_id;
+      void api.getAppState().then(latest=>{
+        if(cancelled)return;
+        const task=latest.tasks.find(task=>task.id===taskId);
+        navigationHandled.current=request.id;clearRequest(request.id);
+        if(!task){setNavigationError(tr("该任务已不存在，请刷新任务列表。"));return;}
+        setNavigationError("");setView({kind:"all"});setFilter(DEFAULT_FILTER);setCreating(false);setEditingTask(task);
+      }).catch(e=>{if(!cancelled){navigationHandled.current=request.id;clearRequest(request.id);setNavigationError(String(e));}});
+    }
+    return()=>{cancelled=true;};
+  },[request,creating,editingTask]);
 
   // 视图过滤/排序按分钟粒度重算（跨日边界正确），不随每秒 tick 重算
   const nowMinute = Math.floor(now / 60000);
@@ -216,6 +238,7 @@ export default function ManagerApp() {
 
       {/* 主内容区 */}
       <main className="flex min-w-0 flex-1 flex-col">
+        {navigationError && <div role="alert" className="p-3 text-xs text-[var(--urgent-text)]">{navigationError}</div>}
         {view.kind === "settings" ? (
           <SettingsPanel />
         ) : view.kind === "categories" ? (
@@ -238,6 +261,10 @@ export default function ManagerApp() {
       {(creating || editingTask) && (
         <TaskFormModal
           task={editingTask}
+          notice={request ? <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--glass-border)] p-3 text-xs">
+            <span>{tr("请先完成或关闭当前编辑，随后将打开请求的页面。")}</span>
+            <button type="button" onClick={()=>clearRequest(request.id)}>{tr("取消跳转")}</button>
+          </div> : undefined}
           onClose={() => {
             setCreating(false);
             setEditingTask(null);
