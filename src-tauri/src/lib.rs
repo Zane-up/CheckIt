@@ -6,7 +6,9 @@ pub mod diagnostics;
 pub mod dock;
 pub mod models;
 mod native_drag;
+mod window_shape;
 pub mod notification;
+pub mod popup;
 pub mod reminders;
 pub mod settings;
 pub mod tray;
@@ -51,10 +53,16 @@ fn spawn_scheduler(app: AppHandle, wake_rx: mpsc::Receiver<()>) {
                     for action in actions {
                         // 扫描共用 now；每条动作真正提交前由 deliver_with_clock
                         // 重新读取实时钟并再次校验宽限，避免睡眠/阻塞后沿用旧时间。
-                        dispatch_action(&app, &engine, action, &SystemClock, &transport);
+                        let delivery = popup::ReminderTransport { app: &app, action: &action, system: &transport };
+                        dispatch_action(&app, &engine, action.clone(), &SystemClock, &delivery);
                     }
                 }
                 Err(e) => log::error!("提醒扫描失败: {e}"),
+            }
+
+            // 恢复尚未确认的弹窗，并剔除已完成、删除、改期的任务。
+            if let Err(e) = popup::refresh(&app) {
+                log::warn!("刷新居中提醒失败: {e}");
             }
 
             // 等待下一次：定时或唤醒信号
@@ -70,15 +78,15 @@ fn spawn_scheduler(app: AppHandle, wake_rx: mpsc::Receiver<()>) {
     });
 }
 
-/// 执行提醒动作：实时取时 → 统一校验 → 后台同步提交系统通知 → 状态机落库 → 广播。
+/// 执行提醒动作：实时取时 → 统一校验 → 按设置提交通知/弹窗 → 状态机落库 → 广播。
 ///
 /// 状态流转：
-/// - pending --系统 API 受理--> submitted
+/// - pending --所选渠道受理--> submitted
 /// - pending --底层提交失败--> failed(attempts+1，30s 后可重试，最多 3 次)
 /// - 任务完成/删除/改期/移除 offset --> cancelled
 /// - 通知关闭/超出 15 分钟宽限 --> skipped
 ///
-/// submitted 仅表示 OS 受理，不保证用户看到横幅；崩溃窗口可能重复提交（at-least-once）。
+/// submitted 不代表用户确认；系统通知崩溃窗口可能重复提交（at-least-once），弹窗按事件 ID 幂等。
 fn dispatch_action(
     app: &AppHandle,
     engine: &ReminderEngine,
@@ -88,7 +96,7 @@ fn dispatch_action(
 ) {
     match engine.deliver_with_clock(&action, clock, transport) {
         Ok(DeliveryOutcome::Submitted { title }) => {
-            // 系统已受理后再广播，前端可据此显示应用内提示（语义与 submitted 对齐）。
+            // 所选渠道已受理后再广播（语义与 submitted 对齐）。
             let _ = app.emit(
                 "reminder-fired",
                 serde_json::json!({
@@ -186,13 +194,23 @@ pub fn run() {
 
             tray::setup_tray(app.handle())?;
 
+            app.manage(popup::PopupState::default());
+            popup::setup(app.handle());
+
             spawn_scheduler(app.handle().clone(), wake_rx);
+
+            // 配置中的 WebView 可能先于 setup 完成加载。通知已订阅的首屏重取，
+            // 避免增加提醒窗口后更容易遇到“state not managed”的初始化竞争。
+            let _ = app.emit("data-changed", serde_json::json!({ "entity": "settings" }));
 
             log::info!("CheckIt 初始化完成");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
+            popup::get_popup_reminders,
+            popup::dismiss_popup_reminders,
+            popup::preview_popup_reminder,
             commands::create_task,
             commands::update_task,
             commands::delete_task,

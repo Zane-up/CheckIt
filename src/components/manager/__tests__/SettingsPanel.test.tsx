@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
         always_on_top: true,
         close_to_tray: true,
         notifications_enabled: true,
+        popup_reminders_enabled: false,
         default_reminder_offsets: [3600, 1500],
         widget_display_count: 8,
         launch_at_login: false,
@@ -40,7 +41,7 @@ vi.mock("@/hooks/useAppData", () => ({
 }));
 
 vi.mock("@/services/api", () => ({
-  api: { getDbPath: vi.fn(async () => "C:\\fake\\checkit.db") },
+  api: { getDbPath: vi.fn(async () => "C:\\fake\\checkit.db"), previewPopupReminder: vi.fn(async () => {}) },
 }));
 
 import SettingsPanel from "@/components/manager/SettingsPanel";
@@ -56,6 +57,15 @@ async function waitForDbPath() {
 }
 
 describe("SettingsPanel 默认提醒", () => {
+  it("居中弹窗开关独立保存，不改变系统通知", async () => {
+    render(<SettingsPanel />);
+    await waitForDbPath();
+    const toggle = screen.getByRole("switch", { name: t.settings.popupReminders });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await userEvent.click(toggle);
+    expect(mocks.updateSettings).toHaveBeenCalledWith({ popup_reminders_enabled: true });
+  });
+
   it("回显自定义默认提醒（非预设值 25 分钟）", async () => {
     render(<SettingsPanel />);
     await waitForDbPath();

@@ -9,12 +9,14 @@ import { t } from "@/i18n/zh";
 import type { ThemeMode } from "@/types";
 import { ReminderPicker } from "@/components/ui/ReminderPicker";
 import { api } from "@/services/api";
+import { version } from "../../../package.json";
 
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+function Toggle({ checked, onChange, disabled, label }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label?: string }) {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={label}
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
@@ -46,6 +48,7 @@ export default function SettingsPanel() {
   const { state, updateSettings } = useAppData();
   const s = state.settings;
   const [dbPath, setDbPath] = useState("");
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
     void api.getDbPath().then(setDbPath).catch(() => setDbPath(""));
@@ -112,15 +115,28 @@ export default function SettingsPanel() {
           <Row label={t.settings.launchAtLogin}>
             <Toggle checked={s.launch_at_login} onChange={(v) => set({ launch_at_login: v })} />
           </Row>
-          <Row label={t.settings.notifications}>
-            <Toggle checked={s.notifications_enabled} onChange={(v) => set({ notifications_enabled: v })} />
-          </Row>
         </div>
       </section>
 
       <section className="mb-5">
         <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">{t.settings.reminders}</h2>
         <div className="flex flex-col gap-1.5">
+          <Row label={t.settings.notifications}>
+            <Toggle label={t.settings.notifications} checked={s.notifications_enabled} onChange={(v) => set({ notifications_enabled: v })} />
+          </Row>
+          <Row label={t.settings.popupReminders} hint={t.settings.popupRemindersHint}>
+            <Toggle label={t.settings.popupReminders} checked={s.popup_reminders_enabled} onChange={(v) => set({ popup_reminders_enabled: v })} />
+          </Row>
+          <div className="px-1 py-1">
+            <button type="button" className="rounded-lg border border-[var(--glass-border)] px-3 py-1.5 text-xs hover:bg-[var(--surface-hover)]"
+              onClick={() => {
+                setPreviewError(null);
+                void api.previewPopupReminder().catch((e) => setPreviewError(String(e)));
+              }}>
+              {t.settings.previewPopup}
+            </button>
+            {previewError && <div role="alert" className="mt-1 text-xs text-[var(--urgent-text)]">{previewError}</div>}
+          </div>
           <Row label={t.settings.widgetCount}>
             <input
               type="number"
@@ -162,7 +178,7 @@ export default function SettingsPanel() {
       </section>
 
       <div className="mt-6 border-t border-[var(--glass-border)] pt-3 text-center text-[12px] text-[var(--text-muted)]">
-        CheckIt v{state.settings ? "0.1.0" : ""} · Check it. Get it done.
+        CheckIt v{version} · Check it. Get it done.
       </div>
     </div>
   );

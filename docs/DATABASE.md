@@ -11,7 +11,7 @@ app_settings（key-value）
 schema_migrations（版本）
 ```
 
-## 表结构（v3）
+## 表结构（v4）
 
 ### tasks
 
@@ -72,6 +72,18 @@ schema_migrations（版本）
 
 索引：task_id、state。
 
+### popup_reminders（v4 居中弹窗收件箱）
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| event_id | INTEGER PK → reminder_events(id) ON DELETE CASCADE | 每条提醒事件最多入箱一次 |
+| body | TEXT NOT NULL | 提交时提醒正文快照 |
+| dismissed | INTEGER CHECK IN (0,1) DEFAULT 0 | 确认过的提醒保留标记，重试不会重新弹出 |
+
+仅展示任务仍待完成、截止时间快照和提前量仍有效的未确认记录。确认按前端实际展示的 ID 批量执行事务，不清空同时到达的新提醒。重启后恢复未确认记录（收件箱恢复不受新提醒 15 分钟补发宽限限制）。预览不写入此表。
+
+两种方式同时开启时先幂等入箱并展示，再提交系统通知；系统通知失败由既有状态机重试，弹窗不会重复入箱。`submitted` 在仅弹窗模式下表示持久化并成功请求展示，仍不代表用户已确认；是否确认以 `dismissed` 为准。
+
 ### app_settings（key-value）
 
 | key | 值 | 默认 |
@@ -82,6 +94,7 @@ schema_migrations（版本）
 | always_on_top | true/false | true |
 | close_to_tray | true/false | true |
 | notifications_enabled | true/false | true |
+| popup_reminders_enabled | true/false，独立于系统通知开关 | false |
 | widget_display_count | 3–20 | 8 |
 | launch_at_login | true/false | false |
 | default_reminder_offsets | JSON 数组 | [3600,600] |
@@ -92,7 +105,7 @@ schema_migrations（版本）
 | version | applied_at |
 | --- | --- |
 
-迁移在 `Database::migrate()` 中顺序执行 v1→v2→v3；重复打开时跳过已应用版本（幂等，见测试 `migration_is_idempotent`）。
+迁移在 `Database::migrate()` 中顺序执行 v1→v2→v3→v4；重复打开时跳过已应用版本（幂等，见测试 `migration_is_idempotent`）。v4 仅增加弹窗收件箱，不改写已有任务或提醒记录。
 新建库在一次打开中依次应用全部版本；v1/v2 旧库自动升级且保留数据。
 
 ## 一致性策略

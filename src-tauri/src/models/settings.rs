@@ -13,6 +13,9 @@ pub struct AppSettings {
     pub always_on_top: bool,
     pub close_to_tray: bool,
     pub notifications_enabled: bool,
+    /// 旧版本升级后默认关闭；可独立于系统通知开启。
+    #[serde(default)]
+    pub popup_reminders_enabled: bool,
     pub default_reminder_offsets: Vec<i64>,
     pub widget_display_count: i64,
     pub launch_at_login: bool,
@@ -35,6 +38,7 @@ impl Default for AppSettings {
             always_on_top: true,
             close_to_tray: true,
             notifications_enabled: true,
+            popup_reminders_enabled: false,
             default_reminder_offsets: vec![3600, 600],
             widget_display_count: 8,
             launch_at_login: false,
@@ -44,6 +48,10 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    pub fn reminders_enabled(&self) -> bool {
+        self.notifications_enabled || self.popup_reminders_enabled
+    }
+
     /// 校验并夹紧取值范围，防止持久化非法配置。
     pub fn sanitized(mut self) -> Self {
         self.theme = match self.theme.as_str() {
@@ -73,6 +81,7 @@ pub struct SettingsPatch {
     pub always_on_top: Option<bool>,
     pub close_to_tray: Option<bool>,
     pub notifications_enabled: Option<bool>,
+    pub popup_reminders_enabled: Option<bool>,
     pub default_reminder_offsets: Option<Vec<i64>>,
     pub widget_display_count: Option<i64>,
     pub launch_at_login: Option<bool>,
@@ -99,6 +108,9 @@ impl SettingsPatch {
         if let Some(v) = self.notifications_enabled {
             s.notifications_enabled = v;
         }
+        if let Some(v) = self.popup_reminders_enabled {
+            s.popup_reminders_enabled = v;
+        }
         if let Some(v) = &self.default_reminder_offsets {
             s.default_reminder_offsets = v.clone();
         }
@@ -117,6 +129,19 @@ impl SettingsPatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_settings_keep_popup_disabled_and_each_channel_can_work_alone() {
+        let mut legacy = serde_json::to_value(AppSettings::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("popup_reminders_enabled");
+        let mut settings: AppSettings = serde_json::from_value(legacy).unwrap();
+        assert!(!settings.popup_reminders_enabled);
+        assert!(settings.reminders_enabled());
+        settings.notifications_enabled = false;
+        assert!(!settings.reminders_enabled());
+        settings.popup_reminders_enabled = true;
+        assert!(settings.reminders_enabled());
+    }
 
     #[test]
     fn sanitize_clamps_opacity() {

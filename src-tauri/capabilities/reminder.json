@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "reminder",
+  "description": "居中提醒窗口仅需事件订阅能力",
+  "windows": ["reminder"],
+  "permissions": ["core:event:default"]
+}

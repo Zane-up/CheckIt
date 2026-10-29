@@ -21,6 +21,8 @@ use crate::models::task::{normalize_reminder_offsets, Priority, Task, TaskInput,
 use crate::models::{AppSettings, Category, SettingsPatch};
 
 pub mod error;
+mod popup;
+pub use popup::PopupReminder;
 
 pub use error::DbError;
 
@@ -240,6 +242,21 @@ impl Database {
                 COMMIT;",
             )?;
             log::info!("数据库迁移 v3（submitted 语义）已应用 ({})", path.display());
+        }
+
+        // 弹窗收件箱：先持久化再展示，未确认的提醒重启后仍可恢复。
+        if current < 4 {
+            conn.execute_batch(
+                "BEGIN;
+                CREATE TABLE popup_reminders (
+                    event_id INTEGER PRIMARY KEY REFERENCES reminder_events(id) ON DELETE CASCADE,
+                    body TEXT NOT NULL,
+                    dismissed INTEGER NOT NULL DEFAULT 0 CHECK (dismissed IN (0, 1))
+                );
+                INSERT INTO schema_migrations (version, applied_at)
+                VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                COMMIT;",
+            )?;
         }
 
         Ok(())
@@ -697,6 +714,7 @@ impl Database {
                 "always_on_top" => settings.always_on_top = value == "true",
                 "close_to_tray" => settings.close_to_tray = value == "true",
                 "notifications_enabled" => settings.notifications_enabled = value == "true",
+                "popup_reminders_enabled" => settings.popup_reminders_enabled = value == "true",
                 "widget_display_count" => {
                     if let Ok(v) = value.parse() {
                         settings.widget_display_count = v
@@ -723,13 +741,14 @@ impl Database {
     /// 写入全部设置键（调用方必须已处于事务中并由其提交/回滚）。
     fn save_settings_inner(conn: &Connection, settings: &AppSettings) -> DbResult<()> {
         let s = settings.clone().sanitized();
-        let entries: [(&str, String); 10] = [
+        let entries: [(&str, String); 11] = [
             ("theme", s.theme.clone()),
             ("glass_enabled", s.glass_enabled.to_string()),
             ("glass_opacity", s.glass_opacity.to_string()),
             ("always_on_top", s.always_on_top.to_string()),
             ("close_to_tray", s.close_to_tray.to_string()),
             ("notifications_enabled", s.notifications_enabled.to_string()),
+            ("popup_reminders_enabled", s.popup_reminders_enabled.to_string()),
             ("widget_display_count", s.widget_display_count.to_string()),
             ("launch_at_login", s.launch_at_login.to_string()),
             ("edge_dock_enabled", s.edge_dock_enabled.to_string()),

@@ -1154,6 +1154,11 @@ pub fn apply_glass_effect(window: &tauri::WebviewWindow, enabled: bool) {
     {
         let _ = (window, enabled);
     }
+    if window.label() == "widget" || window.label() == "reminder" {
+        if let Err(e) = crate::window_shape::setup(window) {
+            log::warn!("应用原生圆角裁切失败: {e}");
+        }
+    }
 }
 
 fn glass_effect_enabled(label: &str, mode: WidgetMode, requested: bool) -> bool {

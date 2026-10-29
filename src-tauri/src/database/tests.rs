@@ -562,7 +562,7 @@ fn migrates_v1_database_to_current_preserving_data() {
         .unwrap();
     drop(conn);
     assert_eq!(cols, 4, "v2 新列必须全部存在");
-    assert_eq!(version, 3, "必须记录最新迁移版本");
+    assert_eq!(version, 4, "必须记录最新迁移版本");
 
     // 迁移幂等：再次打开不重复迁移
     drop(db);
@@ -671,7 +671,7 @@ fn migrates_v2_events_to_v3_submitted_without_data_loss() {
         let version: i64 = conn
             .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 
     // 迁移幂等

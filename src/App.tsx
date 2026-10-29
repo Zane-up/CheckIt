@@ -14,6 +14,7 @@ import { useAppData, AppDataProvider } from "@/hooks/useAppData";
 import { ThemeProvider } from "@/hooks/useTheme";
 import WidgetApp from "@/components/widget/WidgetApp";
 import ManagerApp from "@/components/manager/ManagerApp";
+import ReminderApp from "@/components/reminder/ReminderApp";
 import { t } from "@/i18n/zh";
 
 /** 数据门卫：首次加载才允许占满全屏；已加载后刷新失败只显示可重试提示，保留界面与草稿 */
@@ -115,7 +116,9 @@ function DataProviderInner({ label }: { label: string }) {
   return (
     <ThemeProvider>
       <NowProvider>
-        <DataGate>{label === "manager" ? <ManagerApp /> : <WidgetApp />}</DataGate>
+        {label === "reminder" ? <ReminderApp /> : (
+          <DataGate>{label === "manager" ? <ManagerApp /> : <WidgetApp />}</DataGate>
+        )}
       </NowProvider>
     </ThemeProvider>
   );

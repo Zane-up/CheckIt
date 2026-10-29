@@ -43,6 +43,8 @@ export interface AppSettings {
   always_on_top: boolean;
   close_to_tray: boolean;
   notifications_enabled: boolean;
+  /** 屏幕居中提醒，可独立于系统通知启用 */
+  popup_reminders_enabled: boolean;
   /** 新任务的默认提醒提前秒数 */
   default_reminder_offsets: number[];
   /** 悬浮窗任务列表默认显示条数 */

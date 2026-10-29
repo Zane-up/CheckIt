@@ -17,7 +17,17 @@ async function invoke<T>(cmd: string, payload?: Record<string, unknown>): Promis
 
 export const api = {
   /** 一次性加载全部状态（任务/分类/设置） */
-  getAppState: () => invoke<AppState>("get_app_state"),
+  getAppState: async (): Promise<AppState> => {
+    // 静态 WebView 可以早于 Rust setup 完成加载。只重试这个明确的瞬时错误；
+    // 磁盘、数据库等真实失败仍直接交给 DataGate 展示。
+    for (let attempt = 0; ; attempt++) {
+      try { return await invoke<AppState>("get_app_state"); }
+      catch (e) {
+        if (attempt >= 19 || !(e instanceof Error) || !e.message.includes("state not managed")) throw e;
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 250));
+      }
+    }
+  },
 
   createTask: (input: TaskInput) => invoke<Task>("create_task", { input }),
   updateTask: (id: number, input: TaskInput) => invoke<Task>("update_task", { id, input }),
@@ -39,6 +49,10 @@ export const api = {
 
   /** 手动触发一次提醒检查（窗口聚焦/恢复时调用，加速补查） */
   checkRemindersNow: () => invoke<void>("check_reminders_now"),
+
+  getPopupReminders: () => invoke<PopupSnapshot>("get_popup_reminders"),
+  dismissPopupReminders: (ids: number[]) => invoke<void>("dismiss_popup_reminders", { ids }),
+  previewPopupReminder: () => invoke<void>("preview_popup_reminder"),
 
   getDbPath: () => invoke<string>("get_db_path"),
 
@@ -62,6 +76,19 @@ export const api = {
 };
 
 export type WidgetMode = "expanded" | "collapsed" | "docked";
+
+export interface PopupReminder {
+  id: number;
+  task_id: number;
+  title: string;
+  body: string;
+  due_at: string;
+}
+
+export interface PopupSnapshot {
+  reminders: PopupReminder[];
+  preview: boolean;
+}
 
 /** 后端数据变更事件载荷 */
 export interface DataChangedPayload {

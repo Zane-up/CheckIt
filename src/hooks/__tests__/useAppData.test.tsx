@@ -31,6 +31,7 @@ function baseSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     always_on_top: true,
     close_to_tray: true,
     notifications_enabled: true,
+    popup_reminders_enabled: false,
     default_reminder_offsets: [3600, 600],
     widget_display_count: 8,
     launch_at_login: false,
@@ -109,6 +110,17 @@ beforeEach(() => {
 });
 
 describe("useAppData 首屏与事件订阅顺序", () => {
+  it("首屏早于后端初始化时，初始化完成事件可自动恢复", async () => {
+    vi.spyOn(api, "getAppState")
+      .mockRejectedValueOnce(new Error("state not managed"))
+      .mockResolvedValue(makeState(["初始化完成"]));
+    render(<AppDataProvider><Probe /></AppDataProvider>);
+    await waitFor(() => expect(screen.getByTestId("error").textContent).toContain("state not managed"));
+    await act(async () => { handlers.get("data-changed")!({ payload: { entity: "settings" } }); });
+    await waitFor(() => expect(screen.getByTestId("title").textContent).toBe("初始化完成"));
+    expect(screen.getByTestId("error").textContent).toBe("");
+  });
+
   it("订阅就绪前不读取快照；订阅成功后立即读取", async () => {
     const listenGate = deferred<() => void>();
     listenMock.mockImplementationOnce((() => listenGate.promise) as typeof listen);

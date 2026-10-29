@@ -20,7 +20,7 @@
 //!    - 任务仍为 pending
 //!    - 截止时间仍等于 due_at_snapshot
 //!    - 对应 offset 仍在任务 reminders 中
-//!    - 全局 notifications_enabled 仍开启
+//!    - 至少一种提醒方式仍开启
 //!    - 距离计划时刻未超过 15 分钟补发宽限
 //! 5. **状态语义**：
 //!    - pending   = 已排队待提交（queued，可崩溃恢复）
@@ -78,7 +78,7 @@ pub enum ActionValidity {
 /// 一次发送尝试的结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeliveryOutcome {
-    /// 系统通知 API 已受理（OS submitted）
+    /// 所选提醒渠道已受理（不代表用户看到或确认）
     Submitted { title: String },
     /// 底层提交失败，已记录 failed（attempts+1）
     Failed { error: String },
@@ -137,7 +137,7 @@ impl ReminderEngine {
     /// 不满足条件的行直接落到 skipped/cancelled，绝不产生发送动作。
     pub fn run_once(&self, now: DateTime<Utc>) -> DbResult<Vec<ReminderAction>> {
         // 通知开关与本轮所有有效性判断共用同一份设置快照。
-        let notify_on = self.db.load_settings()?.notifications_enabled;
+        let notify_on = self.db.load_settings()?.reminders_enabled();
 
         let mut actions = Vec::new();
 
@@ -251,7 +251,7 @@ impl ReminderEngine {
         action: &ReminderAction,
         now: DateTime<Utc>,
     ) -> DbResult<ActionValidity> {
-        let notify_on = self.db.load_settings()?.notifications_enabled;
+        let notify_on = self.db.load_settings()?.reminders_enabled();
         let task = match self.db.get_task(action.task_id) {
             Ok(t) => Some(t),
             Err(DbError::NotFound) => None,
@@ -330,7 +330,7 @@ impl ReminderEngine {
         transport: &dyn NotificationTransport,
     ) -> DbResult<DeliveryOutcome> {
         let started_at = clock.now();
-        let notify_on = self.db.load_settings()?.notifications_enabled;
+        let notify_on = self.db.load_settings()?.reminders_enabled();
         let task = match self.db.get_task(action.task_id) {
             Ok(t) => Some(t),
             Err(DbError::NotFound) => None,
