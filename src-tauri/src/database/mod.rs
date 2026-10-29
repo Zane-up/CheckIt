@@ -23,6 +23,9 @@ use crate::models::{AppSettings, Category, SettingsPatch};
 pub mod error;
 mod popup;
 pub mod backups;
+pub mod daily_backup;
+mod trash;
+pub use trash::DeletedTask;
 pub use popup::PopupReminder;
 
 pub use error::DbError;
@@ -105,7 +108,7 @@ impl Database {
             |row| row.get(0),
         )?;
 
-        if current > 0 && current < 5 && path != Path::new(":memory:") {
+        if current > 0 && current < 6 && path != Path::new(":memory:") {
             let directory = path.parent().unwrap_or(Path::new(".")).join("backups");
             backups::backup_connection(&conn, &directory, "before-upgrade")?;
         }
@@ -269,6 +272,11 @@ impl Database {
             conn.execute_batch("BEGIN; ALTER TABLE popup_reminders ADD COLUMN snoozed_until TEXT;
                 INSERT INTO schema_migrations(version, applied_at) VALUES(5, strftime('%Y-%m-%dT%H:%M:%fZ','now')); COMMIT;")?;
         }
+        if current < 6 {
+            conn.execute_batch("BEGIN; CREATE TABLE task_trash(task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE, deleted_at TEXT NOT NULL);
+              CREATE INDEX idx_task_trash_deleted ON task_trash(deleted_at);
+              INSERT INTO schema_migrations(version,applied_at) VALUES(6,strftime('%Y-%m-%dT%H:%M:%fZ','now')); COMMIT;")?;
+        }
 
         Ok(())
     }
@@ -348,6 +356,15 @@ impl Database {
     }
 
     fn load_tasks_where(
+        &self, conn:&Connection, where_clause:&str, params:&[&dyn rusqlite::ToSql]
+    ) -> DbResult<Vec<Task>> {
+        let active="NOT EXISTS (SELECT 1 FROM task_trash WHERE task_id=tasks.id)";
+        let clause=if where_clause.is_empty(){format!("WHERE {active}")}
+            else{format!("WHERE {active} AND ({})",where_clause.trim_start_matches("WHERE "))};
+        self.load_tasks_including_trash(conn,&clause,params)
+    }
+
+    fn load_tasks_including_trash(
         &self,
         conn: &Connection,
         where_clause: &str,
@@ -468,7 +485,7 @@ impl Database {
         let tx = conn.transaction()?;
         // 校验任务存在（在事务内完成，避免与并发删除竞态）
         let exists: bool = tx
-            .query_row("SELECT COUNT(*) FROM tasks WHERE id = ?1", [id], |r| {
+            .query_row("SELECT COUNT(*) FROM tasks WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM task_trash WHERE task_id=tasks.id)", [id], |r| {
                 r.get::<_, i64>(0)
             })
             .map(|c| c > 0)?;
@@ -498,7 +515,7 @@ impl Database {
         let now = now_iso();
         let conn = self.conn.lock();
         let affected = conn.execute(
-            "UPDATE tasks SET status = ?1, completed_at = ?2, updated_at = ?3 WHERE id = ?4",
+            "UPDATE tasks SET status = ?1, completed_at = ?2, updated_at = ?3 WHERE id = ?4 AND NOT EXISTS (SELECT 1 FROM task_trash WHERE task_id=tasks.id)",
             rusqlite::params![
                 if completed { "completed" } else { "pending" },
                 if completed { Some(&now) } else { None },
@@ -513,14 +530,9 @@ impl Database {
         self.get_task(id)
     }
 
-    /// 删除任务（提醒配置级联删除；reminder_events 保留历史不影响去重——任务删除后不会再有新事件）。
+    /// 删除后保留七天，可撤销；调度读取与弹窗均排除回收站中的任务。
     pub fn delete_task(&self, id: i64) -> DbResult<()> {
-        let conn = self.conn.lock();
-        let affected = conn.execute("DELETE FROM tasks WHERE id = ?1", [id])?;
-        if affected == 0 {
-            return Err(DbError::NotFound);
-        }
-        Ok(())
+        self.trash_task(id, Utc::now())
     }
 
     // ===== 提醒事件（去重 + 状态机）=====
@@ -715,6 +727,8 @@ impl Database {
         for row in rows {
             let (key, value) = row?;
             match key.as_str() {
+                "auto_backup_enabled" => settings.auto_backup_enabled=value=="true",
+                "auto_backup_keep" => {if let Ok(v)=value.parse(){settings.auto_backup_keep=v;}},
                 "language" => settings.language = value,
                 "theme" => settings.theme = value,
                 "glass_enabled" => settings.glass_enabled = value == "true",
@@ -753,7 +767,9 @@ impl Database {
     /// 写入全部设置键（调用方必须已处于事务中并由其提交/回滚）。
     fn save_settings_inner(conn: &Connection, settings: &AppSettings) -> DbResult<()> {
         let s = settings.clone().sanitized();
-        let entries: [(&str, String); 12] = [
+        let entries: [(&str, String); 14] = [
+            ("auto_backup_enabled",s.auto_backup_enabled.to_string()),
+            ("auto_backup_keep",s.auto_backup_keep.to_string()),
             ("language", s.language.clone()),
             ("theme", s.theme.clone()),
             ("glass_enabled", s.glass_enabled.to_string()),

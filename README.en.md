@@ -25,11 +25,15 @@ Task names, descriptions and category names stay as you entered them. Dates use 
 - Store tasks locally in SQLite. Task management and reminders work offline; checking for updates requires GitHub access.
 - Choose dark, light or system theme. The manager has an optional glass effect; the widget uses an opaque surface for readable text and clean rounded corners.
 
+Deleted tasks offer **Undo delete for ten seconds** and remain in **Recently deleted** for seven days. They stop reminding while deleted. Restoring retains task contents and future reminders without replaying past notifications. Expired entries are removed automatically.
+
 ## Backups and restores
 
 Under **Settings → Local backup and restore**, select **Back up now**. **Open backup folder** lets you copy the resulting `.db` file to another drive. To restore an external backup, copy it back into that folder, refresh the list and select it.
 
 Restoring replaces current tasks, categories, settings and reminder history, then restarts CheckIt. A safety backup is created before restoring and before database schema upgrades. If this backup fails, the operation is stopped. Backups are local and are not uploaded automatically.
+
+**Daily automatic backup is enabled by default.** CheckIt backs up once per 24 hours while running and catches up once after restart or wake if overdue. Keep 3, 7, 14 or 30 automatic copies in Settings, view the last success or error, and retry immediately. Only recognized automatic backup files rotate; manual and safety copies stay. Keep an additional copy on a separate drive.
 
 Reminder cards support completing a single task, snoozing it, or opening its details. Opening details acknowledges that reminder after requesting navigation. Any existing editor draft is kept until you close the editor, then navigation continues.
 

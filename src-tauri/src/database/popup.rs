@@ -234,7 +234,7 @@ impl Database {
         let task_id:i64=tx.query_row("SELECT t.id FROM popup_reminders p
           JOIN reminder_events e ON e.id=p.event_id JOIN tasks t ON t.id=e.task_id
           JOIN reminders r ON r.task_id=t.id AND r.offset_seconds=e.offset_seconds
-          WHERE p.event_id=?1 AND p.dismissed=0 AND t.status='pending' AND t.due_at=e.due_at_snapshot",[id],|r|r.get(0))?;
+          WHERE p.event_id=?1 AND p.dismissed=0 AND t.status='pending' AND NOT EXISTS (SELECT 1 FROM task_trash WHERE task_id=t.id) AND t.due_at=e.due_at_snapshot",[id],|r|r.get(0))?;
         let now=now_iso();
         tx.execute("UPDATE tasks SET status='completed', completed_at=?2, updated_at=?2 WHERE id=?1",rusqlite::params![task_id,now])?;
         tx.execute("UPDATE popup_reminders SET dismissed=1 WHERE event_id IN (SELECT id FROM reminder_events WHERE task_id=?1)",[task_id])?;
@@ -275,7 +275,7 @@ impl Database {
              JOIN reminder_events e ON e.id = p.event_id
              JOIN tasks t ON t.id = e.task_id
              JOIN reminders r ON r.task_id = t.id AND r.offset_seconds = e.offset_seconds
-             WHERE p.dismissed = 0 AND t.status = 'pending' AND t.due_at = e.due_at_snapshot
+             WHERE p.dismissed = 0 AND t.status = 'pending' AND NOT EXISTS (SELECT 1 FROM task_trash WHERE task_id=t.id) AND t.due_at = e.due_at_snapshot
              AND (p.snoozed_until IS NULL OR julianday(p.snoozed_until) <= julianday(?1))
              ORDER BY p.event_id",
         )?;

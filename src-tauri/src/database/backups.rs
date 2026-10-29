@@ -43,7 +43,7 @@ impl Database {
             input.query_row("SELECT MAX(version) FROM schema_migrations", [], |r| {
                 r.get(0)
             })?;
-        if check != "ok" || !(4..=5).contains(&version) {
+        if check != "ok" || !(4..=6).contains(&version) {
             return Err(DbError::Validation(
                 "备份损坏或数据库版本不兼容（支持 v0.2.0 及之后的当前结构）".into(),
             ));
@@ -131,7 +131,7 @@ mod tests {
         db.ensure_default_categories().unwrap();
         let file=db.create_backup(dir.path(),"manual").unwrap();
         let old=Connection::open(&file).unwrap();
-        old.execute_batch("ALTER TABLE popup_reminders DROP COLUMN snoozed_until; DELETE FROM schema_migrations WHERE version=5;").unwrap();
+        old.execute_batch("ALTER TABLE popup_reminders DROP COLUMN snoozed_until; DELETE FROM schema_migrations WHERE version>=5; DROP TABLE task_trash;").unwrap();
         drop(old);
         db.restore_backup(&file,dir.path()).unwrap();
         assert!(db.list_popup_reminders().unwrap().is_empty());

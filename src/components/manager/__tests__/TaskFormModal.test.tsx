@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => {
       mocks.updateTask.mockClear();
       mocks.deleteTask.mockClear();
       mocks.settings = {
+        auto_backup_enabled: true,
+        auto_backup_keep: 7,
         language: "zh-CN",
         theme: "dark",
         glass_enabled: true,

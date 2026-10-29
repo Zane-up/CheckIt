@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AppSettings {
+    #[serde(default = "default_true")]
+    pub auto_backup_enabled: bool,
+    #[serde(default = "default_backup_keep")]
+    pub auto_backup_keep: i64,
     #[serde(default = "default_language")]
     pub language: String,
     /// dark | light | system
@@ -31,11 +35,15 @@ fn default_true() -> bool {
     true
 }
 
+fn default_backup_keep()->i64 { 7 }
+
 fn default_language() -> String { "zh-CN".into() }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            auto_backup_enabled: true,
+            auto_backup_keep: 7,
             language: default_language(),
             theme: "dark".into(),
             glass_enabled: true,
@@ -59,6 +67,7 @@ impl AppSettings {
 
     /// 校验并夹紧取值范围，防止持久化非法配置。
     pub fn sanitized(mut self) -> Self {
+        self.auto_backup_keep=self.auto_backup_keep.clamp(3,30);
         if self.language != "en" { self.language = default_language(); }
         self.theme = match self.theme.as_str() {
             "light" => "light".into(),
@@ -81,6 +90,8 @@ impl AppSettings {
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SettingsPatch {
+    pub auto_backup_enabled: Option<bool>,
+    pub auto_backup_keep: Option<i64>,
     pub language: Option<String>,
     pub theme: Option<String>,
     pub glass_enabled: Option<bool>,
@@ -97,6 +108,8 @@ pub struct SettingsPatch {
 
 impl SettingsPatch {
     pub fn apply_to(&self, s: &mut AppSettings) {
+        if let Some(v)=self.auto_backup_enabled{s.auto_backup_enabled=v;}
+        if let Some(v)=self.auto_backup_keep{s.auto_backup_keep=v;}
         if let Some(v) = &self.language { s.language = v.clone(); }
         if let Some(v) = &self.theme {
             s.theme = v.clone();

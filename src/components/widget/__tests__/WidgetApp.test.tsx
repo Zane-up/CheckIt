@@ -55,6 +55,8 @@ vi.mock("@/hooks/useAppData", () => ({
       tasks: mocks.tasks,
       categories: [],
       settings: {
+        auto_backup_enabled: true,
+        auto_backup_keep: 7,
         language: "zh-CN",
         theme: "dark",
         glass_enabled: true,

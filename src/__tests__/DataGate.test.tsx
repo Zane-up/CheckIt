@@ -18,6 +18,8 @@ let handlers: Map<string, Handler>;
 
 function settings(): AppSettings {
   return {
+    auto_backup_enabled: true,
+    auto_backup_keep: 7,
     language: "zh-CN",
     theme: "dark",
     glass_enabled: true,

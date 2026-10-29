@@ -1,5 +1,12 @@
 /** Application-owned text only. Task titles, notes and category names are never translated. */
 export const en: Record<string, string> = {
+  "任务已移入最近删除，七天内可恢复。":"Task moved to Recently deleted. You can restore it within seven days.",
+  "撤销删除":"Undo delete", "最近删除":"Recently deleted", "恢复任务":"Restore task", "删除时间：":"Deleted: ",
+  "暂无最近删除的任务":"No recently deleted tasks",
+  "删除的任务保留七天，期间停止提醒。恢复只保留未来提醒，不补发已经过去的通知。":"Deleted tasks are kept for seven days with reminders stopped. Restoring keeps future reminders and does not resend past notifications.",
+  "每天自动备份":"Daily automatic backup", "自动备份保留数量":"Automatic backups to keep", "上次自动备份：":"Last automatic backup: ",
+  "尚未成功备份":"No successful backup yet", "自动备份失败：":"Automatic backup failed: ", "立即执行自动备份":"Run automatic backup now",
+  "运行期间每二十四小时备份一次，重启或睡眠恢复后补做一次；只轮换自动备份，手动和保险备份不自动删除。":"Back up every 24 hours while running, and catch up once after restart or wake. Only automatic backups rotate; manual and safety backups are kept.",
   "该任务已不存在，请刷新任务列表。":"This task no longer exists. Refresh the task list.",
   "请先完成或关闭当前编辑，随后将打开请求的页面。":"Finish or close the current editor to continue to the requested page.",
   "取消跳转":"Cancel navigation", "完成任务":"Complete task", "稍后 {0} 分钟":"Snooze {0} min", "查看详情":"View details",

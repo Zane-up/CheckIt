@@ -25,6 +25,8 @@ let unlistenCalls: string[];
 
 function baseSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
+    auto_backup_enabled: true,
+    auto_backup_keep: 7,
     language: "zh-CN",
     theme: "dark",
     glass_enabled: true,
@@ -72,7 +74,7 @@ function deferred<T>() {
 }
 
 function Probe() {
-  const { state, hasData, loading, error, syncError, reload, retrySync, updateSettings } =
+  const { state, hasData, loading, error, syncError, reload, retrySync, updateSettings,deleteTask } =
     useAppData();
   return (
     <div>
@@ -94,6 +96,7 @@ function Probe() {
       <button type="button" onClick={() => void updateSettings({ theme: "system" })}>
         system
       </button>
+      <button type="button" onClick={() => void deleteTask(42)}>delete</button>
     </div>
   );
 }
@@ -108,6 +111,30 @@ beforeEach(() => {
       handlers.delete(event);
     };
   }) as typeof listen);
+});
+
+it("删除后可撤销精确任务并重新读取快照",async()=>{
+  vi.spyOn(api,"getAppState").mockResolvedValue(makeState(["任务"]));
+  vi.spyOn(api,"deleteTask").mockResolvedValue(undefined);
+  const restore=vi.spyOn(api,"restoreTask").mockResolvedValue(undefined);
+  render(<AppDataProvider><Probe/></AppDataProvider>);
+  await screen.findByText("任务");await userEvent.click(screen.getByText("delete"));
+  await userEvent.click(await screen.findByText("撤销删除"));
+  await waitFor(()=>expect(screen.queryByText("撤销删除")).toBeNull());
+  expect(restore).toHaveBeenCalledWith(42);
+});
+
+it("十秒后关闭快捷撤销提示，清理定时器",async()=>{
+  vi.spyOn(api,"getAppState").mockResolvedValue(makeState(["任务"]));
+  vi.spyOn(api,"deleteTask").mockResolvedValue(undefined);
+  const {unmount}=render(<AppDataProvider><Probe/></AppDataProvider>);
+  await screen.findByText("任务");vi.useFakeTimers();
+  try{
+    await act(async()=>{screen.getByText("delete").click();});
+    expect(screen.getByText("撤销删除")).toBeTruthy();
+    await act(async()=>{vi.advanceTimersByTime(10000);});
+    expect(screen.queryByText("撤销删除")).toBeNull();unmount();
+  }finally{vi.useRealTimers();}
 });
 
 describe("useAppData 首屏与事件订阅顺序", () => {

@@ -48,12 +48,17 @@ fn spawn_scheduler(app: AppHandle, wake_rx: mpsc::Receiver<()>) {
         // 安装版使用产品 identifier 作为 AUMID，开发版沿用底层库默认值。
         let transport = SystemNotificationTransport::from_identifier(&app.config().identifier);
 
+        let mut next_maintenance=Utc::now();
         loop {
             {
             let state = app.state::<CheckItState>();
             let _maintenance = state.maintenance.lock();
             // 一次扫描共用一个时钟：领取、恢复、宽限判断使用完全相同的 now。
             let now = Utc::now();
+            if now>=next_maintenance {
+                if let Err(e)=backups::maintain(&app,now){log::warn!("Data maintenance failed: {e}");}
+                next_maintenance=now+chrono::Duration::minutes(1);
+            }
             match engine.run_once(now) {
                 Ok(actions) => {
                     for action in actions {
@@ -217,6 +222,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
+            commands::get_deleted_tasks,
+            commands::restore_task,
+            backups::get_backup_status,
+            backups::retry_auto_backup,
             navigation::open_manager_target,
             navigation::get_manager_navigation,
             navigation::acknowledge_manager_navigation,

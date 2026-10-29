@@ -11,7 +11,7 @@ app_settings（key-value）
 schema_migrations（版本）
 ```
 
-## 表结构（v5）
+## 表结构（v6）
 
 ### tasks
 
@@ -85,10 +85,24 @@ schema_migrations（版本）
 
 两种方式同时开启时先幂等入箱并展示，再提交系统通知；系统通知失败由既有状态机重试，弹窗不会重复入箱。`submitted` 在仅弹窗模式下表示持久化并成功请求展示，仍不代表用户已确认；是否确认以 `dismissed` 为准。
 
+### task_trash（v6 最近删除）
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| task_id | INTEGER PK → tasks(id) ON DELETE CASCADE | 原始任务仍保留在 tasks；正常任务读取统一排除此表成员 |
+| deleted_at | TEXT NOT NULL | RFC3339 UTC，索引 idx_task_trash_deleted |
+
+删除与提醒取消、弹窗确认在同一事务内完成。恢复仅在 deleted_at 后七天内允许；对已过去且没有记录的提醒补记 skipped，未来已取消事件允许重新领取，submitted 历史保留。七天后后台维护事务清理任务、提醒配置、事件和弹窗，不触碰正常任务。数据库备份包含最近删除的记录。
+
 ### app_settings（key-value）
 
 | key | 值 | 默认 |
 | --- | --- | --- |
+| auto_backup_enabled | true/false | true |
+| auto_backup_keep | 3–30（界面提供 3/7/14/30） | 7 |
+| auto_backup_last_success / auto_backup_last_attempt | RFC3339 UTC | 未执行时无记录 |
+| auto_backup_error | 最近失败原因；成功后清空 | 无 |
+| language | zh-CN / en | zh-CN |
 | theme | dark / light / system | dark |
 | glass_enabled | true/false | true |
 | glass_opacity | 0.05–0.6 | 0.35 |
@@ -106,7 +120,7 @@ schema_migrations（版本）
 | version | applied_at |
 | --- | --- |
 
-迁移在 `Database::migrate()` 中顺序执行 v1→v2→v3→v4→v5；重复打开时跳过已应用版本（幂等，见测试 `migration_is_idempotent`）。v4 仅增加弹窗收件箱，不改写已有任务或提醒记录。
+迁移在 `Database::migrate()` 中顺序执行 v1→v2→v3→v4→v5→v6；重复打开时跳过已应用版本（幂等，见测试 `migration_is_idempotent`）。v4 仅增加弹窗收件箱，不改写已有任务或提醒记录。
 新建库在一次打开中依次应用全部版本；v1/v2 旧库自动升级且保留数据。
 
 ## 一致性策略
@@ -128,10 +142,12 @@ schema_migrations（版本）
   多调度器并行，绕过单实例保护可能重复领取并重复提交。v5 新增弹窗延后字段；
   时间戳语义变化（使用提交完成时刻）不改变表结构，不需要迁移
 
-## 备份与恢复（v0.3.0）
+## 备份与恢复（v0.6.0）
 
-使用 SQLite Online Backup API 备份当前连接，包含 WAL 中已提交的数据。目标先写入 .partial，转换为独立 DELETE journal 文件并同步后重命名为 .db。未完成文件不列入恢复列表。备份保存在 app_data_dir/backups，不上传云端，不自动清理用户备份。
+使用 SQLite Online Backup API 备份当前连接，包含 WAL 中已提交的数据。目标先写入 .partial，转换为独立 DELETE journal 文件并同步后重命名为 .db。未完成文件不列入恢复列表。备份保存在 app_data_dir/backups，不上传云端；手动和保险备份不自动清理。
 
-数据库结构迁移前、恢复前自动备份；失败时中止迁移或恢复。仅接受本机备份目录内文件，拒绝越界路径。恢复校验 integrity_check、foreign_key_check、版本 4/5 与应用状态解析；旧结构在临时内存库迁移，不改写原备份。恢复期间与调度器互斥，使用 SQLite backup 原子写入当前连接后重启，以重新加载窗口和提醒状态。
+数据库结构迁移前、恢复前自动备份；失败时中止迁移或恢复。仅接受本机备份目录内文件，拒绝越界路径。恢复校验 integrity_check、foreign_key_check、版本 4/5/6 与应用状态解析；旧结构在临时内存库迁移，不改写原备份。恢复期间与调度器互斥，使用 SQLite backup 原子写入当前连接后重启，以重新加载窗口和提醒状态。
 
 稍后提醒只更新当前可见事件 ID 的 snoozed_until，不修改 reminder_events 去重状态、不创建系统通知、不改变截止时间。取消、改期、完成任务仍通过原队列关联条件过滤；重启或睡眠恢复后到期的未确认弹窗会再次显示。
+
+自动备份由后台维护每分钟检查，成功间隔至少二十四小时，失败后至少十五分钟重试；持久化成功/尝试时间保证重启与睡眠后只补一次。默认保留七份，只按合法时间戳自动备份文件名排序轮换，不跟随符号链接、不清理手动和保险备份。状态与开关通过设置页提供，关闭后不执行自动备份。

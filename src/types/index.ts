@@ -37,6 +37,8 @@ export interface Task {
 }
 
 export interface AppSettings {
+  auto_backup_enabled: boolean;
+  auto_backup_keep: number;
   language: "zh-CN" | "en";
   theme: ThemeMode;
   glass_enabled: boolean;

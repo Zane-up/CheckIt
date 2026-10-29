@@ -193,7 +193,7 @@ export default function SettingsPanel() {
         </div>
       </section>
 
-      <BackupPanel />
+      <BackupPanel autoEnabled={s.auto_backup_enabled} keep={s.auto_backup_keep} onChange={set}/>
       <UpdateChecker />
     </div>
   );

@@ -14,6 +14,7 @@ import {
   ListTodo,
   Settings as SettingsIcon,
   AlarmClockOff,
+  Trash2,
 } from "lucide-react";
 import { useAppData } from "@/hooks/useAppData";
 import { useNow } from "@/hooks/useNow";
@@ -23,6 +24,7 @@ import { applyTaskFilter, DEFAULT_FILTER, sortTasks, type SortKey, type TaskFilt
 import { isDueToday, isOverdue } from "@/utils/time";
 import TaskListView from "@/components/manager/TaskListView";
 import CategoryManager from "@/components/manager/CategoryManager";
+import TrashPanel from "./TrashPanel";
 import SettingsPanel from "@/components/manager/SettingsPanel";
 import TaskFormModal from "@/components/manager/TaskFormModal";
 
@@ -34,6 +36,7 @@ type ViewId =
   | { kind: "completed" }
   | { kind: "category"; id: number }
   | { kind: "categories" }
+  | { kind: "trash" }
   | { kind: "settings" };
 
 export default function ManagerApp() {
@@ -222,6 +225,7 @@ export default function ManagerApp() {
           })}
         </nav>
 
+        <button type="button" onClick={()=>setView({kind:"trash"})} className={`mx-2 flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${view.kind==="trash"?"bg-[var(--surface-active)] text-[var(--text-primary)]":"text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"}`}><Trash2 size={14}/>{tr("最近删除")}</button>
         <button
           type="button"
           onClick={() => setView({ kind: "settings" })}
@@ -239,7 +243,7 @@ export default function ManagerApp() {
       {/* 主内容区 */}
       <main className="flex min-w-0 flex-1 flex-col">
         {navigationError && <div role="alert" className="p-3 text-xs text-[var(--urgent-text)]">{navigationError}</div>}
-        {view.kind === "settings" ? (
+        {view.kind === "trash" ? <TrashPanel/> : view.kind === "settings" ? (
           <SettingsPanel />
         ) : view.kind === "categories" ? (
           <CategoryManager />

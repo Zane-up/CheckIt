@@ -11,6 +11,24 @@ fn directory(app: &AppHandle) -> Result<PathBuf, String> {
         .join("backups"))
 }
 
+pub fn maintain(app:&AppHandle,now:chrono::DateTime<chrono::Utc>)->Result<(),String> {
+    let state=app.state::<CheckItState>();
+    state.db.purge_task_trash(now).map_err(|e|e.to_string())?;
+    state.db.run_daily_backup(&directory(app)?,now,false).map_err(|e|e.to_string())?;Ok(())
+}
+#[tauri::command]
+pub fn get_backup_status(app:AppHandle)->Result<crate::database::daily_backup::BackupStatus,String>{
+    app.state::<CheckItState>().db.backup_status().map_err(|e|e.to_string())
+}
+#[tauri::command]
+pub async fn retry_auto_backup(app:AppHandle)->Result<crate::database::daily_backup::BackupStatus,String>{
+    tauri::async_runtime::spawn_blocking(move || {
+        let state=app.state::<CheckItState>();
+        let _maintenance=state.maintenance.lock();
+        state.db.run_daily_backup(&directory(&app)?,chrono::Utc::now(),true).map_err(|e|e.to_string())
+    }).await.map_err(|e|e.to_string())?
+}
+
 #[derive(Serialize)]
 pub struct BackupFile {
     name: String,

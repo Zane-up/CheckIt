@@ -12,11 +12,11 @@
 
 ## 下载与安装（Windows 用户）
 
-**[直接下载 v0.5.0 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.5.0/CheckIt_0.5.0_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
+**[直接下载 v0.6.0 Windows 安装包](https://github.com/Zane-up/CheckIt/releases/download/v0.6.0/CheckIt_0.6.0_x64-setup.exe)** · [查看最新版与更新说明](https://github.com/Zane-up/CheckIt/releases/latest)
 
 支持 Windows 10/11 64 位。下载 `.exe` 后双击，按向导安装即可，普通用户无需安装 Node.js、Rust 或开发工具。若从版本页面下载，请展开 **Assets** 并选择 `.exe` 安装包，`Source code` 是开发源码。
 
-本次优化详情见 [v0.5.0 更新记录](CHANGELOG.md)。
+本次优化详情见 [v0.6.0 更新记录](CHANGELOG.md)。
 
 在 **全部任务 → 设置 → 语言 / Language** 中选择 **简体中文** 或 **English**。切换立即生效并保存，任务、描述和分类名称保留原样，截止时间不会改变。
 
@@ -42,6 +42,10 @@
 居中提醒窗口支持“全部稍后 5 分钟 / 10 分钟”，重启或睡眠恢复后继续生效；仅延后当前展示的弹窗，不改变任务截止时间与系统通知规则。
 
 悬浮菜单与托盘的“设置”可直接打开设置页。提醒卡片支持单条完成、稍后提醒和查看详情；查看详情会定位对应任务并确认该条提醒。管理窗口正在编辑时会保留草稿，结束编辑后继续跳转。
+
+删除后有 **10 秒快捷撤销**，也可在管理窗口左侧的 **最近删除** 中恢复七天内删除的任务。删除期间停止提醒；恢复保留任务内容和未来提醒，不补发已经过去的通知，七天后自动清理。
+
+**每天自动备份默认开启**，软件运行时每 24 小时执行一次；重启或睡眠恢复后若已到期，只补做一次。设置页可关闭、选择保留 3 / 7 / 14 / 30 份，查看上次成功时间和失败原因，并立即重试。轮换仅清理带合法时间戳的自动备份，手动备份和升级、恢复前的保险备份不会自动删除。备份仍保存在同一磁盘，建议另存一份到其他位置。
 
 ## 技术栈
 
@@ -92,11 +96,11 @@ cargo check              # Rust 编译检查
 npm run tauri build
 ```
 
-当前源码的构建产物位于 `src-tauri/target/release/bundle/nsis/CheckIt_0.5.0_x64-setup.exe`。
+当前源码的构建产物位于 `src-tauri/target/release/bundle/nsis/CheckIt_0.6.0_x64-setup.exe`。
 
 ## 安装与运行
 
-1. 双击 `CheckIt_0.2.0_x64-setup.exe`，按向导完成安装（当前用户安装，无需管理员权限）。
+1. 双击 `CheckIt_0.6.0_x64-setup.exe`，按向导完成安装（当前用户安装，无需管理员权限）。
 2. 启动后桌面出现 CheckIt 悬浮小组件，可拖动到任意位置。
 3. 点击标题栏 `+` 快速添加任务；点击「全部任务」打开完整管理窗口。
 4. 关闭悬浮窗默认隐藏到系统托盘，提醒继续生效；可在设置中改为"关闭即退出"。

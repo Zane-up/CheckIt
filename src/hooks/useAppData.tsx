@@ -1,4 +1,4 @@
-import { useI18n } from "@/i18n";
+import { errorText,tr,useI18n } from "@/i18n";
 /**
  * 应用数据上下文：任务 / 分类 / 设置 的唯一数据源。
  *
@@ -52,6 +52,8 @@ const EMPTY_STATE: AppState = {
   tasks: [],
   categories: [],
   settings: {
+    auto_backup_enabled: true,
+    auto_backup_keep: 7,
     language: "zh-CN",
     theme: "dark",
     glass_enabled: true,
@@ -70,6 +72,7 @@ const EMPTY_STATE: AppState = {
 export function AppDataProvider({ children }: { children: ReactNode }) {
   useI18n();
   const [state, setState] = useState<AppState>(EMPTY_STATE);
+  const [deletedTask,setDeletedTask]=useState<{id:number;until:number}|null>(null);
   useLayoutEffect(() => { setLanguage(state.settings.language); }, [state.settings.language]);
   const [loading, setLoading] = useState(true);
   const [hasData, setHasData] = useState(false);
@@ -150,6 +153,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const deleteTask = useCallback(async (id: number) => {
     await api.deleteTask(id);
+    setDeletedTask({id,until:Date.now()+10000});
   }, []);
 
   const setTaskStatus = useCallback(async (id: number, completed: boolean) => {
@@ -224,7 +228,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
+  return <AppDataContext.Provider value={value}>{children}{deletedTask && <UndoDelete key={deletedTask.id} task={deletedTask} clear={()=>setDeletedTask(old=>old?.id===deletedTask.id?null:old)} reload={reload}/>}</AppDataContext.Provider>;
+}
+
+function UndoDelete({task,clear,reload}:{task:{id:number;until:number};clear:()=>void;reload:()=>Promise<void>}){
+  useI18n();const [error,setError]=useState("");const [busy,setBusy]=useState(false);
+  useEffect(()=>{const timer=window.setTimeout(clear,Math.max(0,task.until-Date.now()));return()=>window.clearTimeout(timer);},[task.id,task.until]);
+  return <div role="status" className="fixed inset-x-3 bottom-3 z-[120] rounded-xl border border-[var(--glass-border)] bg-[var(--surface-overlay)] p-3 text-xs shadow-lg">
+    <div className="flex flex-wrap items-center justify-between gap-2"><span>{tr("任务已移入最近删除，七天内可恢复。")}</span>
+      <button type="button" disabled={busy} className="text-[var(--accent-text)]" onClick={()=>{setBusy(true);void api.restoreTask(task.id).then(async()=>{await reload();clear();}).catch(e=>{setError(String(e));setBusy(false);});}}>{tr("撤销删除")}</button></div>
+    {error&&<p role="alert">{errorText(error)}</p>}
+  </div>;
 }
 
 export function useAppData(): AppDataValue {

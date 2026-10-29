@@ -17,6 +17,10 @@ async function invoke<T>(cmd: string, payload?: Record<string, unknown>): Promis
 }
 
 export const api = {
+  getDeletedTasks: () => invoke<{task:Task;deleted_at:string}[]>("get_deleted_tasks"),
+  restoreTask: (id:number) => invoke<void>("restore_task",{id}),
+  getBackupStatus: () => invoke<BackupStatus>("get_backup_status"),
+  retryAutoBackup: () => invoke<BackupStatus>("retry_auto_backup"),
   openSettings: () => invoke<void>("open_manager_target", {target:{view:"settings"}}),
   openTask: (taskId: number) => invoke<void>("open_manager_target", {target:{view:"task",task_id:taskId}}),
   getManagerNavigation: () => invoke<ManagerNavigationRequest | null>("get_manager_navigation"),
@@ -88,6 +92,7 @@ export const api = {
 };
 
 export type WidgetMode = "expanded" | "collapsed" | "docked";
+export interface BackupStatus {last_success:string|null;last_attempt:string|null;error:string|null}
 export interface ManagerNavigationRequest {
   id: number;
   target: {view:"settings"} | {view:"task";task_id:number};

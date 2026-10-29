@@ -30,6 +30,21 @@ fn to_invoke_error(e: DbError) -> String {
 }
 
 #[tauri::command]
+pub fn get_deleted_tasks(state:tauri::State<CheckItState>)->Result<Vec<crate::database::DeletedTask>,String>{
+    state.db.list_deleted_tasks(chrono::Utc::now()).map_err(to_invoke_error)
+}
+#[tauri::command]
+pub async fn restore_task(app: AppHandle, id: i64) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<CheckItState>();
+        let _maintenance = state.maintenance.lock();
+        state.db.restore_task(id, chrono::Utc::now()).map_err(to_invoke_error)?;
+        broadcast(&app, "tasks");
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub fn get_app_state(state: tauri::State<CheckItState>) -> Result<crate::database::AppState, String> {
     state.db.get_app_state().map_err(to_invoke_error)
 }
@@ -49,10 +64,15 @@ pub fn update_task(app: AppHandle, state: tauri::State<CheckItState>, id: i64, i
 }
 
 #[tauri::command]
-pub fn delete_task(app: AppHandle, state: tauri::State<CheckItState>, id: i64) -> Result<(), String> {
-    state.db.delete_task(id).map_err(to_invoke_error)?;
-    broadcast(&app, "tasks");
-    Ok(())
+pub async fn delete_task(app: AppHandle, id: i64) -> Result<(), String> {
+    // 不在 UI 线程等待调度锁：调度线程展示弹窗时可能需要主线程处理窗口消息。
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<CheckItState>();
+        let _maintenance = state.maintenance.lock();
+        state.db.delete_task(id).map_err(to_invoke_error)?;
+        broadcast(&app, "tasks");
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

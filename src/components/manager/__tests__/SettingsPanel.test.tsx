@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
     reset() {
       mocks.updateSettings.mockClear();
       mocks.settings = {
+        auto_backup_enabled: true,
+        auto_backup_keep: 7,
         language: "zh-CN",
         theme: "dark",
         glass_enabled: true,
@@ -42,7 +44,7 @@ vi.mock("@/hooks/useAppData", () => ({
 }));
 
 vi.mock("@/services/api", () => ({
-  api: { listBackups: vi.fn(async () => []), getDbPath: vi.fn(async () => "C:\\fake\\checkit.db"), previewPopupReminder: vi.fn(async () => {}) },
+  api: { getBackupStatus: vi.fn(async()=>({last_success:null,last_attempt:null,error:null})), listBackups: vi.fn(async () => []), getDbPath: vi.fn(async () => "C:\\fake\\checkit.db"), previewPopupReminder: vi.fn(async () => {}) },
 }));
 
 import SettingsPanel from "@/components/manager/SettingsPanel";
